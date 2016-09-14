@@ -23,9 +23,7 @@
 
 #include "math.h"
 #include "helpers.h"
-#include "wmm.h"
 #include "geom.h"
-#include "perf.h"
 
 /*
  * The WGS84 ellipsoid parameters.
@@ -788,17 +786,6 @@ dir2hdg(vect2_t dir)
 	return (180 - RAD2DEG(asin(dir.x / vect2_abs(dir))));
 }
 
-/*
- * Displaces a given geodetic position 
- */
-geo_pos2_t
-geo_displace_mag(const ellip_t *ellip, const wmm_t *wmm, geo_pos2_t pos,
-    double maghdg, double dist)
-{
-	return (geo_displace(ellip, pos, wmm_mag2true(wmm, maghdg,
-	    GEO2_TO_GEO3(pos, 0)), dist));
-}
-
 geo_pos2_t
 geo_displace(const ellip_t *ellip, geo_pos2_t pos, double truehdg, double dist)
 {
@@ -817,34 +804,6 @@ geo_displace_dir(const ellip_t *ellip, geo_pos2_t pos, vect2_t dir, double dist)
 	dir = vect2_set_abs(dir, tan(dist_r));
 
 	return (fpp2geo(dir, &fpp));
-}
-
-geo_pos2_t
-geo_mag_radial_isect(const ellip_t *ellip, const wmm_t *wmm, geo_pos2_t pos1,
-    double rad1, geo_pos2_t pos2, double rad2)
-{
-	geo_pos3_t	pos1_3d = GEO2_TO_GEO3(pos1, 0);
-	geo_pos3_t	pos2_3d = GEO2_TO_GEO3(pos2, 0);
-	vect3_t		pos1_v = geo2ecef(pos1_3d, ellip);
-	vect3_t		pos2_v = geo2ecef(pos2_3d, ellip);
-	vect3_t		pos_mean = vect3_mean(pos1_v, pos2_v);
-	geo_pos3_t	fpp_pos = ecef2geo(pos_mean, ellip);
-	fpp_t		fpp;
-	vect2_t		pos1_fpp_v, rad1_dir, pos2_fpp_v, rad2_dir, isect;
-
-	fpp = gnomo_fpp_init(GEO3_TO_GEO2(fpp_pos), 0, ellip, B_TRUE);
-	pos1_fpp_v = geo2fpp(pos1, &fpp);
-	rad1_dir = hdg2dir(wmm_mag2true(wmm, rad1, pos1_3d));
-	pos2_fpp_v = geo2fpp(pos2, &fpp);
-	rad2_dir = hdg2dir(wmm_mag2true(wmm, rad2, pos2_3d));
-
-	isect = vect2vect_isect(rad1_dir, pos1_fpp_v, rad2_dir, pos2_fpp_v,
-	    B_FALSE);
-
-	if (IS_NULL_VECT(isect))
-		return (NULL_GEO_POS2);
-
-	return (fpp2geo(isect, &fpp));
 }
 
 /*

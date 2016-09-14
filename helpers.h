@@ -23,7 +23,6 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include "airac.h"
 #include "types.h"
 
 #ifdef	__cplusplus
@@ -94,6 +93,16 @@ extern "C" {
 #define	_CTASSERT(x, y)		__CTASSERT(x, y)
 #define	__CTASSERT(x, y)	\
 	typedef char __compile_time_assertion__ ## y [(x) ? 1 : -1]
+
+/*
+ * Length and velocity unit conversions.
+ */
+#define	FEET2MET(x)	((x) * 0.3048)		/* feet to meters */
+#define	MET2FEET(x)	((x) * 3.2808398950131)	/* meters to feet */
+#define	NM2MET(x)	((x) * 1852)		/* nautical miles to meters */
+#define	MET2NM(x)	((x) / 1852.0)		/* meters to nautical miles */
+#define	KT2MPS(k)	(NM2MET(k) / 3600)	/* knots to m/s */
+#define	MPS2KT(k)	(MET2NM(k) * 3600)	/* m/s to knots */
 
 /* generic parser validator helpers */
 
