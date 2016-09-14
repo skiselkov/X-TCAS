@@ -45,5 +45,5 @@ typedef struct RA {
 void
 xtcas_run(void)
 {
-	const SL_t *sl;
+//	const SL_t *sl;
 }

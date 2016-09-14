@@ -16,23 +16,72 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
+#include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #include "XPLMDataAccess.h"
+#include "types.h"
+
 #include "xplane.h"
+
+static bool_t intf_inited = B_FALSE;
+XPLMDataRef time_dr = NULL,
+    baro_alt_dr = NULL,
+    rad_alt_dr = NULL,
+    lat_dr = NULL,
+    lon_dr = NULL;
+
+static XPLMDataRef
+find_dr_chk(const char *name, XPLMDataTypeID type)
+{
+	XPLMDataRef dr = XPLMFindDataRef(name);
+	assert(dr != NULL);
+	assert((XPLMGetDataRefTypes(dr) & type) == type);
+	return (dr);
+}
 
 void
 xtcas_sim_intf_init(void)
 {
+	time_dr = find_dr_chk("sim/time/total_running_time_sec",
+	    xplmType_Float);
+	baro_alt_dr = find_dr_chk("sim/flightmodel/misc/h_ind",
+	    xplmType_Float);
+	rad_alt_dr = find_dr_chk("sim/cockpit2/gauges/indicators/"
+	    "radio_altimeter_height_ft_pilot", xplmType_Float);
+	lat_dr = find_dr_chk("sim/flightmodel/position/latitude",
+	    xplmType_Double);
+	lon_dr = find_dr_chk("sim/flightmodel/position/longitude",
+	    xplmType_Double);
+	intf_inited = B_TRUE;
 }
 
 void
 xtcas_sim_intf_fini(void)
 {
+	time_dr = NULL;
+	baro_alt_dr = NULL;
+	rad_alt_dr = NULL;
+	lat_dr = NULL;
+	lon_dr = NULL;
+	intf_inited = B_FALSE;
+}
+
+double
+xtcas_get_time(void)
+{
+	assert(intf_inited);
+	return (XPLMGetDataf(time_dr));
 }
 
 void
-xtcas_get_aircraft_pos(double *lat, double *lon, double *track_true,
-    double *alt, double *alt_agl, double *vvel)
+xtcas_get_aircraft_pos(double *lat, double *lon, double *alt_msl,
+    double *alt_agl)
 {
+	assert(intf_inited);
+	*lat = XPLMGetDatad(lat_dr);
+	*lon = XPLMGetDatad(lon_dr);
+	*alt_msl = XPLMGetDataf(baro_alt_dr);
+	*alt_agl = XPLMGetDataf(rad_alt_dr);
 }

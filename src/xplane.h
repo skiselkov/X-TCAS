@@ -25,9 +25,9 @@ extern "C" {
 
 void xtcas_sim_intf_init(void);
 void xtcas_sim_intf_fini(void);
-
-void xtcas_get_aircraft_pos(double *lat, double *lon, double *track_true,
-    double *alt, double *alt_agl, double *vvel);
+double xtcas_get_time(void);
+void xtcas_get_aircraft_pos(double *lat, double *lon, double *alt_msl,
+    double *alt_agl);
 
 #ifdef __cplusplus
 }

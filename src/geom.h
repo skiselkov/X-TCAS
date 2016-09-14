@@ -19,6 +19,7 @@
 #ifndef	_XTCAS_GEOM_H_
 #define	_XTCAS_GEOM_H_
 
+#include <stdlib.h>
 #include <math.h>
 
 #include "types.h"
