@@ -26,7 +26,7 @@
  * Puts a position update into `pos'. The time of the update is `t'.
  */
 void
-xtcas_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
+xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
 {
 	unsigned next_step = (pos->latest_step + 1) % NUM_POS_STEPS;
 
@@ -42,8 +42,8 @@ xtcas_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
  * Given an object's position, calculate its groundspeed/velocity heading and
  * first derivative.
  */
-void
-xtcas_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
+bool_t
+xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
 {
 	vect3_t p1, p2, p3;
 	double dt1, dt2;
@@ -60,7 +60,7 @@ xtcas_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
 			assert(dt1 > 0.0);
 			*gs = vect3_abs(vect3_sub(p1, p2)) / dt1;
 		} else {
-			*gs = NAN;
+			return (B_FALSE);
 		}
 	}
 	if (d_gs != NULL) {
@@ -70,17 +70,19 @@ xtcas_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
 			*d_gs = (vect3_abs(vect3_sub(p1, p2)) / dt1) -
 			    (vect3_abs(vect3_sub(p2, p3)) / dt2);
 		} else {
-			*d_gs = NAN;
+			return (B_FALSE);
 		}
 	}
+
+	return (B_TRUE);
 }
 
 /*
  * Given an object's position, calculate its true track heading and first
  * derivative.
  */
-void
-xtcas_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk)
+bool_t
+xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk)
 {
 	fpp_t fpp;
 	geo_pos3_t p1 = pos->pos[pos->latest_step];
@@ -94,11 +96,10 @@ xtcas_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk)
 	tp3 = geo2fpp(GEO3_TO_GEO2(p3), &fpp);
 
 	if (trk != NULL) {
-		if (pos->populated_steps >= 2) {
+		if (pos->populated_steps >= 2)
 			*trk = dir2hdg(vect2_sub(tp1, tp2));
-		} else {
-			*trk = NAN;
-		}
+		else
+			return (B_FALSE);
 	}
 	if (d_trk != NULL) {
 		if (pos->populated_steps >= 3) {
@@ -112,17 +113,18 @@ xtcas_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk)
 			*d_trk = (dir2hdg(vect2_sub(tp1, tp2)) -
 			    dir2hdg(vect2_sub(tp2, tp3))) / (dt1 + dt2);
 		} else {
-			*d_trk = NAN;
+			return (B_FALSE);
 		}
 	}
+	return (B_TRUE);
 }
 
 /*
  * Given an object's position, calculate its vertical velocity and first
  * derivative.
  */
-void
-xtcas_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
+bool_t
+xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
 {
 	double e1, e2, e3;
 	double dt1 = pos->time[pos->latest_step] -
@@ -139,7 +141,7 @@ xtcas_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
 			assert(dt1 > 0.0);
 			*vvel = (e1 - e2) / dt1;
 		} else {
-			*vvel = NAN;
+			return (B_FALSE);
 		}
 	}
 	if (d_vvel != NULL) {
@@ -148,7 +150,8 @@ xtcas_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
 			assert(dt2 > 0.0);
 			*d_vvel = ((e1 - e2) / dt1) - ((e2 - e3) / dt2);
 		} else {
-			*d_vvel = NAN;
+			return (B_FALSE);
 		}
 	}
+	return (B_TRUE);
 }

@@ -76,12 +76,12 @@ xtcas_get_time(void)
 }
 
 void
-xtcas_get_aircraft_pos(double *lat, double *lon, double *alt_msl,
-    double *alt_agl)
+xtcas_get_aircraft_pos(void *acf_ID, geo_pos3_t *pos, double *alt_agl)
 {
 	assert(intf_inited);
-	*lat = XPLMGetDatad(lat_dr);
-	*lon = XPLMGetDatad(lon_dr);
-	*alt_msl = XPLMGetDataf(baro_alt_dr);
+	assert(acf_ID == MY_ACF_ID);
+	pos->lat = XPLMGetDatad(lat_dr);
+	pos->lon = XPLMGetDatad(lon_dr);
+	pos->elev = XPLMGetDataf(baro_alt_dr);
 	*alt_agl = XPLMGetDataf(rad_alt_dr);
 }

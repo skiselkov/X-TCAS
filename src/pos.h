@@ -38,10 +38,16 @@ typedef struct obj_pos {
 	geo_pos3_t pos[NUM_POS_STEPS];
 } obj_pos_t;
 
-void xtcas_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt);
-void xtcas_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs);
-void xtcas_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk);
-void xtcas_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel);
+#define	CUR_OBJ_POS3(op)	((op)->pos[(op)->latest_step])
+#define	CUR_OBJ_ALT_MSL(op)	((op)->pos[(op)->latest_step].elev)
+#define	CUR_OBJ_ALT_AGL(op)	((op)->rad_alt[(op)->latest_step])
+
+void xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd,
+    double rad_alt);
+bool_t xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs);
+bool_t xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk);
+bool_t xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel,
+    double *d_vvel);
 
 #ifdef __cplusplus
 }

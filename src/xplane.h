@@ -19,15 +19,18 @@
 #ifndef	_XTCAS_XPLANE_H_
 #define	_XTCAS_XPLANE_H_
 
+#include "geom.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#define	MY_ACF_ID	(NULL)
+
 void xtcas_sim_intf_init(void);
 void xtcas_sim_intf_fini(void);
 double xtcas_get_time(void);
-void xtcas_get_aircraft_pos(double *lat, double *lon, double *alt_msl,
-    double *alt_agl);
+void xtcas_get_aircraft_pos(void *acf_ID, geo_pos3_t *pos, double *alt_agl);
 
 #ifdef __cplusplus
 }
