@@ -29,18 +29,16 @@ elseif(UNIX)
 	add_library(xtcas SHARED ${ALL_SRC})
 elseif(WIN32)
 	add_library(xtcas MODULE ${ALL_SRC})
-	SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MD")
-	SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELEASE} /MD")
-	SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MDd")
+	SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MD")
+	SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} /MD")
+	SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MDd")
 endif()
 
 #compiler flags
 if(WIN32)
-	set(CMAKE_CXX_FLAGS
-	    "${CMAKE_CXX_FLAGS} -DCHECK_RESULT_USED=_Check_return_")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DCHECK_RESULT_USED=_Check_return_")
 else()
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra --std=c++11")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -W -Wall -Wextra -Werror --std=c99 \
 	    -DCHECK_RESULT_USED=\"__attribute__ ((warn_unused_result))\"")
 endif()
 
@@ -51,7 +49,6 @@ if(UNIX)
 	    "../hidapi-0.8.0-rc1_Patched/hidapi")
 endif(UNIX)
 if(APPLE)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64")
 	target_include_directories(xtcas PUBLIC
 	    "../hidapi-0.8.0-rc1_Patched/hidapi")
@@ -66,18 +63,12 @@ if(WIN32)
 	    "../hidapi-0.8.0-rc1_Patched/hidapi")
 endif(WIN32)
 
-# X-Plane stuff
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DXPLM200=1 -DXPLM210=1")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DXPLM200=1 -DXPLM210=1")
 if(APPLE)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAPL=1 -DIBM=0 -DLIN=0")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAPL=1 -DIBM=0 -DLIN=0")
 elseif(UNIX)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAPL=0 -DIBM=0 -DLIN=1")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAPL=0 -DIBM=0 -DLIN=1")
 elseif(WIN32)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAPL=0 -DIBM=1 -DLIN=0 \
-	    -D_CRT_SECURE_NO_WARNINGS /bigobj")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAPL=0 -DIBM=1 -DLIN=0 \
 	    -D_CRT_SECURE_NO_WARNINGS /bigobj")
 endif()
