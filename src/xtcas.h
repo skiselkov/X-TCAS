@@ -16,5 +16,17 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
-#include "xtcas.h"
+#ifndef	_XTCAS_H_
+#define	_XTCAS_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void xtcas_run(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif	/* _XTCAS_H_ */
