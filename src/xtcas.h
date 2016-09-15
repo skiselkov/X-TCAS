@@ -24,6 +24,8 @@ extern "C" {
 #endif
 
 void xtcas_run(void);
+void xtcas_init(void);
+void xtcas_fini(void);
 
 #ifdef __cplusplus
 }

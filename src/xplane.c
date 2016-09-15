@@ -21,6 +21,8 @@
 #include <assert.h>
 
 #include "XPLMDataAccess.h"
+
+#include "helpers.h"
 #include "types.h"
 
 #include "xplane.h"
@@ -76,12 +78,19 @@ xtcas_get_time(void)
 }
 
 void
-xtcas_get_aircraft_pos(void *acf_ID, geo_pos3_t *pos, double *alt_agl)
+xtcas_get_acf_pos(const void *acf_id, geo_pos3_t *pos, double *alt_agl)
 {
 	assert(intf_inited);
-	assert(acf_ID == MY_ACF_ID);
+	assert(acf_id == MY_ACF_ID);
 	pos->lat = XPLMGetDatad(lat_dr);
 	pos->lon = XPLMGetDatad(lon_dr);
 	pos->elev = XPLMGetDataf(baro_alt_dr);
 	*alt_agl = XPLMGetDataf(rad_alt_dr);
+}
+
+void
+xtcas_get_acf_ids(void ***id_list, size_t *count)
+{
+	UNUSED(id_list);
+	UNUSED(count);
 }

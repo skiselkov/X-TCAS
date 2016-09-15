@@ -45,12 +45,25 @@ xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
 bool_t
 xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
 {
+	geo_pos3_t p1_2d, p2_2d, p3_2d;
 	vect3_t p1, p2, p3;
 	double dt1, dt2;
 
-	p1 = geo2ecef(pos->pos[pos->latest_step], &wgs84);
-	p2 = geo2ecef(pos->pos[STEP_BACK(pos->latest_step)], &wgs84);
-	p3 = geo2ecef(pos->pos[STEP_BACK(STEP_BACK(pos->latest_step))], &wgs84);
+	/*
+	 * Strip the elevation part from the positions to transform the
+	 * groundspeed readout into a true along-the-ground value, instead
+	 * of incorporating the vertical velocity portion.
+	 */
+	p1_2d = pos->pos[pos->latest_step];
+	p1_2d.elev = 0;
+	p2_2d = pos->pos[STEP_BACK(pos->latest_step)];
+	p2_2d.elev = 0;
+	p3_2d = pos->pos[STEP_BACK(STEP_BACK(pos->latest_step))];
+	p3_2d.elev = 0;
+
+	p1 = geo2ecef(p1_2d, &wgs84);
+	p2 = geo2ecef(p2_2d, &wgs84);
+	p3 = geo2ecef(p3_2d, &wgs84);
 	dt1 = pos->time[pos->latest_step] -
 	    pos->time[STEP_BACK(pos->latest_step)];
 	dt2 = pos->time[STEP_BACK(pos->latest_step)] -
