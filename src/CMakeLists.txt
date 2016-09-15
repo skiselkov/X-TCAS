@@ -16,8 +16,9 @@
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
-SET(SRC SL.c avl.c geom.c helpers.c htbl.c list.c math.c pos.c xplane.c xtcas.c)
-SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h htbl.h list.h list_impl.h
+SET(SRC SL.c avl.c geom.c helpers.c htbl.c list.c log.c math.c pos.c xplane.c
+    xtcas.c)
+SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h htbl.h log.h list.h list_impl.h
     math.h pos.h types.h xplane.h xtcas.h)
 
 SET(ALL_SRC ${SRC} ${HDR})
