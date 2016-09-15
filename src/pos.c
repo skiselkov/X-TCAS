@@ -30,6 +30,9 @@ xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
 {
 	unsigned next_step = (pos->latest_step + 1) % NUM_POS_STEPS;
 
+	if (pos->populated_steps > 0)
+		assert(pos->time[pos->latest_step] < t);
+
 	pos->time[next_step] = t;
 	pos->rad_alt[next_step] = rad_alt;
 	pos->pos[next_step] = upd;

@@ -20,6 +20,9 @@
 #define	_XTCAS_XPLANE_H_
 
 #include <stdlib.h>
+
+#include "XPLMDefs.h"
+
 #include "geom.h"
 #include "list.h"
 
@@ -29,11 +32,18 @@ extern "C" {
 
 #define	MY_ACF_ID	(NULL)
 
-void xtcas_sim_intf_init(void);
-void xtcas_sim_intf_fini(void);
 double xtcas_get_time(void);
 void xtcas_get_acf_pos(const void *acf_id, geo_pos3_t *pos, double *alt_agl);
 void xtcas_get_acf_ids(void ***id_list, size_t *count);
+
+/*
+ * X-Plane-specific plugin hooks.
+ */
+PLUGIN_API int XPluginStart(char *name, char *sig, char *desc);
+PLUGIN_API void XPluginStop(void);
+PLUGIN_API void XPluginEnable(void);
+PLUGIN_API void XPluginDisable(void);
+PLUGIN_API void XPluginReceiveMessage(XPLMPluginID from, int msg, void *param);
 
 #ifdef __cplusplus
 }

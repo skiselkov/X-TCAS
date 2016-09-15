@@ -66,8 +66,9 @@ typedef struct tcas_acf {
 	avl_node_t node;	/* used by other_acf tree */
 } tcas_acf_t;
 
-tcas_acf_t my_acf;
-avl_tree_t other_acf;
+static tcas_acf_t my_acf;
+static avl_tree_t other_acf;
+static double last_t = 0;
 
 static int
 acf_compar(const void *a, const void *b)
@@ -140,6 +141,8 @@ update_bogie_positions(double t)
 			free(acf);
 		}
 	}
+
+	free(id_list);
 }
 
 void
@@ -147,6 +150,9 @@ xtcas_run(void)
 {
 	const SL_t *sl;
 	double t = xtcas_get_time();
+
+	if (t <= last_t)
+		return;
 
 	update_my_position(t);
 	update_bogie_positions(t);
@@ -156,6 +162,8 @@ xtcas_run(void)
 
 	sl = xtcas_SL_select(CUR_OBJ_ALT_MSL(&my_acf.pos),
 	    CUR_OBJ_ALT_AGL(&my_acf.pos));
+
+	last_t = t;
 }
 
 void

@@ -21,11 +21,22 @@
 #include <assert.h>
 
 #include "XPLMDataAccess.h"
+#include "XPLMPlanes.h"
+#include "XPLMPlugin.h"
+#include "XPLMProcessing.h"
 
+#include "log.h"
 #include "helpers.h"
 #include "types.h"
+#include "xtcas.h"
 
 #include "xplane.h"
+
+#define	FLOOP_INTVAL			1.0
+#define	XTCAS_PLUGIN_NAME		"X-TCAS 1.0"
+#define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas.1.0"
+#define	XTCAS_PLUGIN_DESCRIPTION \
+	"Generic TCAS II v7.1 implementation for X-Plane"
 
 static bool_t intf_inited = B_FALSE;
 XPLMDataRef time_dr = NULL,
@@ -43,8 +54,8 @@ find_dr_chk(const char *name, XPLMDataTypeID type)
 	return (dr);
 }
 
-void
-xtcas_sim_intf_init(void)
+static void
+sim_intf_init(void)
 {
 	time_dr = find_dr_chk("sim/time/total_running_time_sec",
 	    xplmType_Float);
@@ -59,8 +70,8 @@ xtcas_sim_intf_init(void)
 	intf_inited = B_TRUE;
 }
 
-void
-xtcas_sim_intf_fini(void)
+static void
+sim_intf_fini(void)
 {
 	time_dr = NULL;
 	baro_alt_dr = NULL;
@@ -68,6 +79,20 @@ xtcas_sim_intf_fini(void)
 	lat_dr = NULL;
 	lon_dr = NULL;
 	intf_inited = B_FALSE;
+}
+
+static float
+floop_cb(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop,
+    int counter, void *ref)
+{
+	UNUSED(inElapsedSinceLastCall);
+	UNUSED(inElapsedTimeSinceLastFlightLoop);
+	UNUSED(counter);
+	UNUSED(ref);
+
+	xtcas_run();
+
+	return (FLOOP_INTVAL);
 }
 
 double
@@ -91,6 +116,51 @@ xtcas_get_acf_pos(const void *acf_id, geo_pos3_t *pos, double *alt_agl)
 void
 xtcas_get_acf_ids(void ***id_list, size_t *count)
 {
-	UNUSED(id_list);
-	UNUSED(count);
+	XPLMPluginID controller;
+	int total, active;
+
+	XPLMCountAircraft(&total, &active, &controller);
+
+	xtcas_log("get_acf_ids: %d / %d\n", total, active);
+	*id_list = NULL;
+	*count = 0;
+}
+
+PLUGIN_API int
+XPluginStart(char *name, char *sig, char *desc)
+{
+	strcpy(name, XTCAS_PLUGIN_NAME);
+	strcpy(sig, XTCAS_PLUGIN_SIG);
+	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
+	sim_intf_init();
+
+	return (1);
+}
+
+PLUGIN_API void
+XPluginStop(void)
+{
+	sim_intf_fini();
+}
+
+PLUGIN_API void
+XPluginEnable(void)
+{
+	xtcas_init();
+	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
+}
+
+PLUGIN_API void
+XPluginDisable(void)
+{
+	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);
+	xtcas_fini();
+}
+
+PLUGIN_API void
+XPluginReceiveMessage(XPLMPluginID from, int msg, void *param)
+{
+	UNUSED(from);
+	UNUSED(msg);
+	UNUSED(param);
 }
