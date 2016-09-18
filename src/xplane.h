@@ -23,6 +23,7 @@
 
 #include "XPLMDefs.h"
 
+#include "avl.h"
 #include "geom.h"
 #include "list.h"
 
@@ -30,11 +31,15 @@
 extern "C" {
 #endif
 
-#define	MY_ACF_ID	(NULL)
+typedef struct {
+	void		*acf_id;
+	geo_pos3_t	pos;
+	avl_node_t	tree_node;
+} acf_pos_t;
 
 double xtcas_get_time(void);
-void xtcas_get_acf_pos(const void *acf_id, geo_pos3_t *pos, double *alt_agl);
-void xtcas_get_acf_ids(void ***id_list, size_t *count);
+void xtcas_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl);
+void xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num);
 
 /*
  * X-Plane-specific plugin hooks.

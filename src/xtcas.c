@@ -89,7 +89,7 @@ update_my_position(double t)
 	geo_pos3_t new_pos;
 	double new_agl;
 
-	xtcas_get_acf_pos(MY_ACF_ID, &new_pos, &new_agl);
+	xtcas_get_my_acf_pos(&new_pos, &new_agl);
 	xtcas_obj_pos_update(&my_acf.pos, t, new_pos, new_agl);
 	my_acf.acf_ready = (
 	    xtcas_obj_pos_get_gs(&my_acf.pos, &my_acf.gs, &my_acf.d_gs) &&
@@ -100,10 +100,10 @@ update_my_position(double t)
 static void
 update_bogie_positions(double t)
 {
-	void **id_list;
+	acf_pos_t *pos;
 	size_t count;
 
-	xtcas_get_acf_ids(&id_list, &count);
+	xtcas_get_acf_pos(&pos, &count);
 
 	/* walk the tree and mark all acf as out-of-date */
 	for (tcas_acf_t *acf = avl_first(&other_acf); acf != NULL;
@@ -112,18 +112,15 @@ update_bogie_positions(double t)
 
 	for (size_t i = 0; i < count; i++) {
 		avl_index_t where;
-		tcas_acf_t srch = { .acf_id = id_list[i] };
+		tcas_acf_t srch = { .acf_id = pos[i].acf_id };
 		tcas_acf_t *acf = avl_find(&other_acf, &srch, &where);
-		geo_pos3_t new_pos;
-		double alt_agl;
 
 		if (acf == NULL) {
 			acf = calloc(1, sizeof (*acf));
-			acf->acf_id = id_list[i];
+			acf->acf_id = pos[i].acf_id;
 			avl_insert(&other_acf, acf, where);
 		}
-		xtcas_get_acf_pos(acf->acf_id, &new_pos, &alt_agl);
-		xtcas_obj_pos_update(&acf->pos, t, new_pos, alt_agl);
+		xtcas_obj_pos_update(&acf->pos, t, pos[i].pos, -1);
 		acf->acf_ready = (
 		    xtcas_obj_pos_get_gs(&acf->pos, &acf->gs, &acf->d_gs) &&
 		    xtcas_obj_pos_get_trk(&acf->pos, &acf->trk, &acf->d_trk) &&
@@ -142,7 +139,7 @@ update_bogie_positions(double t)
 		}
 	}
 
-	free(id_list);
+	free(pos);
 }
 
 void

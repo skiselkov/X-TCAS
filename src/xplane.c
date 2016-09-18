@@ -16,69 +16,204 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include "XPLMDataAccess.h"
+#include "XPLMDisplay.h"
+#include "XPLMGraphics.h"
 #include "XPLMPlanes.h"
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
 
+#include "avl.h"
+#include "geom.h"
 #include "log.h"
 #include "helpers.h"
 #include "types.h"
 #include "xtcas.h"
+#include "thread.h"
 
 #include "xplane.h"
 
 #define	FLOOP_INTVAL			1.0
+#define	POS_UPDATE_INTVAL		1.0
 #define	XTCAS_PLUGIN_NAME		"X-TCAS 1.0"
 #define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas.1.0"
 #define	XTCAS_PLUGIN_DESCRIPTION \
 	"Generic TCAS II v7.1 implementation for X-Plane"
 
+#define	MAX_MP_PLANES	19
+#define	MAX_DR_NAME_LEN	256
+
 static bool_t intf_inited = B_FALSE;
-XPLMDataRef time_dr = NULL,
+static XPLMDataRef time_dr = NULL,
     baro_alt_dr = NULL,
     rad_alt_dr = NULL,
     lat_dr = NULL,
-    lon_dr = NULL;
+    lon_dr = NULL,
+    plane_x_dr = NULL,
+    plane_y_dr = NULL,
+    plane_z_dr = NULL;
+
+static XPLMDataRef mp_plane_x_dr[MAX_MP_PLANES],
+    mp_plane_y_dr[MAX_MP_PLANES],
+    mp_plane_z_dr[MAX_MP_PLANES];
+
+static mutex_t acf_pos_lock;
+static avl_tree_t acf_pos_tree;
+static double last_pos_collected = 0;
+
+static int
+acf_pos_compar(const void *a, const void *b)
+{
+	const acf_pos_t *pa = a, *pb = b;
+
+	if (pa->acf_id < pb->acf_id)
+		return (-1);
+	else if (pa->acf_id == pb->acf_id)
+		return (0);
+	else
+		return (1);
+}
 
 static XPLMDataRef
-find_dr_chk(const char *name, XPLMDataTypeID type)
+find_dr_chk(XPLMDataTypeID type, const char *fmt, ...)
 {
+	char name[MAX_DR_NAME_LEN];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(name, sizeof (name), fmt, ap);
+	va_end(ap);
+
 	XPLMDataRef dr = XPLMFindDataRef(name);
-	assert(dr != NULL);
-	assert((XPLMGetDataRefTypes(dr) & type) == type);
+	ASSERT(dr != NULL);
+	ASSERT((XPLMGetDataRefTypes(dr) & type) == type);
+
 	return (dr);
 }
 
 static void
 sim_intf_init(void)
 {
-	time_dr = find_dr_chk("sim/time/total_running_time_sec",
-	    xplmType_Float);
-	baro_alt_dr = find_dr_chk("sim/flightmodel/misc/h_ind",
-	    xplmType_Float);
-	rad_alt_dr = find_dr_chk("sim/cockpit2/gauges/indicators/"
-	    "radio_altimeter_height_ft_pilot", xplmType_Float);
-	lat_dr = find_dr_chk("sim/flightmodel/position/latitude",
-	    xplmType_Double);
-	lon_dr = find_dr_chk("sim/flightmodel/position/longitude",
-	    xplmType_Double);
+	time_dr = find_dr_chk(xplmType_Float,
+	    "sim/time/total_running_time_sec");
+	baro_alt_dr = find_dr_chk(xplmType_Float,
+	    "sim/flightmodel/misc/h_ind");
+	rad_alt_dr = find_dr_chk(xplmType_Float,
+	    "sim/cockpit2/gauges/indicators/radio_altimeter_height_ft_pilot");
+	lat_dr = find_dr_chk(xplmType_Double,
+	    "sim/flightmodel/position/latitude");
+	lon_dr = find_dr_chk(xplmType_Double,
+	    "sim/flightmodel/position/longitude");
+
+	plane_x_dr = find_dr_chk(xplmType_Double,
+	    "sim/flightmodel/position/local_x");
+	plane_y_dr = find_dr_chk(xplmType_Double,
+	    "sim/flightmodel/position/local_y");
+	plane_z_dr = find_dr_chk(xplmType_Double,
+	    "sim/flightmodel/position/local_z");
+
+	for (int i = 0; i < MAX_MP_PLANES; i++) {
+		mp_plane_x_dr[i] = find_dr_chk(xplmType_Double,
+		    "sim/multiplayer/position/plane%d_x", i + 1);
+		mp_plane_y_dr[i] = find_dr_chk(xplmType_Double,
+		    "sim/multiplayer/position/plane%d_y", i + 1);
+		mp_plane_z_dr[i] = find_dr_chk(xplmType_Double,
+		    "sim/multiplayer/position/plane%d_z", i + 1);
+	}
+
+	avl_create(&acf_pos_tree, acf_pos_compar, sizeof (acf_pos_t),
+	    offsetof(acf_pos_t, tree_node));
+	xtcas_mutex_init(&acf_pos_lock);
+
 	intf_inited = B_TRUE;
 }
 
 static void
 sim_intf_fini(void)
 {
+	void *cookie = NULL;
+	acf_pos_t *p;
+
 	time_dr = NULL;
 	baro_alt_dr = NULL;
 	rad_alt_dr = NULL;
 	lat_dr = NULL;
 	lon_dr = NULL;
+
+	plane_x_dr = NULL;
+	plane_y_dr = NULL;
+	plane_z_dr = NULL;
+
+	memset(mp_plane_x_dr, 0, sizeof (mp_plane_x_dr));
+	memset(mp_plane_y_dr, 0, sizeof (mp_plane_y_dr));
+	memset(mp_plane_z_dr, 0, sizeof (mp_plane_z_dr));
+
+	while ((p = avl_destroy_nodes(&acf_pos_tree, &cookie)) != NULL)
+		free(p);
+	avl_destroy(&acf_pos_tree);
+	xtcas_mutex_destroy(&acf_pos_lock);
+
 	intf_inited = B_FALSE;
+}
+
+static int
+acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
+{
+	UNUSED(phase);
+	UNUSED(before);
+	UNUSED(ref);
+
+	double now;
+
+	/* grab updates only at a set interval */
+	now = xtcas_get_time();
+	if (last_pos_collected + POS_UPDATE_INTVAL > now)
+		return (1);
+	last_pos_collected = now;
+
+	for (int i = 0; i < MAX_MP_PLANES; i++) {
+		vect3_t local;
+		geo_pos3_t world;
+		avl_index_t where;
+		acf_pos_t srch;
+		acf_pos_t *pos;
+
+		local.x = XPLMGetDatad(mp_plane_x_dr[i]);
+		local.y = XPLMGetDatad(mp_plane_y_dr[i]);
+		local.z = XPLMGetDatad(mp_plane_z_dr[i]);
+
+		xtcas_mutex_enter(&acf_pos_lock);
+
+		srch.acf_id = (void *)(long)(i + 1);
+		pos = avl_find(&acf_pos_tree, &srch, &where);
+		/*
+		 * This is exceedingly unlikely, so it's "good enough" to use
+		 * as an emptiness test.
+		 */
+		if (IS_ZERO_VECT3(local)) {
+			if (pos != NULL) {
+				avl_remove(&acf_pos_tree, pos);
+				free(pos);
+			}
+		} else {
+			if (pos == NULL) {
+				pos = calloc(1, sizeof (*pos));
+				pos->acf_id = (void *)(long)(i + 1);
+				avl_insert(&acf_pos_tree, pos, where);
+			}
+			XPLMLocalToWorld(local.x, local.y, local.z,
+			    &world.lat, &world.lon, &world.elev);
+			pos->pos = world;
+		}
+
+		xtcas_mutex_exit(&acf_pos_lock);
+	}
+
+	return (1);
 }
 
 static float
@@ -98,15 +233,14 @@ floop_cb(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop,
 double
 xtcas_get_time(void)
 {
-	assert(intf_inited);
+	ASSERT(intf_inited);
 	return (XPLMGetDataf(time_dr));
 }
 
 void
-xtcas_get_acf_pos(const void *acf_id, geo_pos3_t *pos, double *alt_agl)
+xtcas_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
 {
-	assert(intf_inited);
-	assert(acf_id == MY_ACF_ID);
+	ASSERT(intf_inited);
 	pos->lat = XPLMGetDatad(lat_dr);
 	pos->lon = XPLMGetDatad(lon_dr);
 	pos->elev = XPLMGetDataf(baro_alt_dr);
@@ -114,16 +248,20 @@ xtcas_get_acf_pos(const void *acf_id, geo_pos3_t *pos, double *alt_agl)
 }
 
 void
-xtcas_get_acf_ids(void ***id_list, size_t *count)
+xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num)
 {
-	XPLMPluginID controller;
-	int total, active;
+	size_t i;
+	acf_pos_t *pos;
 
-	XPLMCountAircraft(&total, &active, &controller);
-
-	xtcas_log("get_acf_ids: %d / %d\n", total, active);
-	*id_list = NULL;
-	*count = 0;
+	xtcas_mutex_enter(&acf_pos_lock);
+	*num = avl_numnodes(&acf_pos_tree);
+	*pos_p = calloc(*num, sizeof (*pos));
+	for (pos = avl_first(&acf_pos_tree), i = 0; pos != NULL;
+	    pos = AVL_NEXT(&acf_pos_tree, pos), i++) {
+		ASSERT(i < *num);
+		memcpy(&(*pos_p)[i], pos, sizeof (*pos));
+	}
+	xtcas_mutex_exit(&acf_pos_lock);
 }
 
 PLUGIN_API int
@@ -148,11 +286,15 @@ XPluginEnable(void)
 {
 	xtcas_init();
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
+	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel,
+	    1, NULL);
 }
 
 PLUGIN_API void
 XPluginDisable(void)
 {
+	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Panel,
+	    1, NULL);
 	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);
 	xtcas_fini();
 }

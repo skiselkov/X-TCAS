@@ -17,9 +17,9 @@ cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
 SET(SRC SL.c avl.c geom.c helpers.c htbl.c list.c log.c math.c pos.c xplane.c
-    xtcas.c)
+    xtcas.c thread.c)
 SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h htbl.h log.h list.h list_impl.h
-    math.h pos.h types.h xplane.h xtcas.h)
+    math.h pos.h types.h xplane.h xtcas.h thread.h)
 
 SET(ALL_SRC ${SRC} ${HDR})
 LIST(SORT ALL_SRC)
@@ -46,22 +46,14 @@ endif()
 #libraries
 if(UNIX)
 	include_directories(xtcas PUBLIC "../SDK/CHeaders/XPLM/"
-	    "../SDK/CHeaders/Widgets/" "../SDK/CHeaders/Wrappers/"
-	    "../hidapi-0.8.0-rc1_Patched/hidapi")
+	    "../SDK/CHeaders/Widgets/" "../SDK/CHeaders/Wrappers/")
 endif(UNIX)
 if(APPLE)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64")
-	target_include_directories(xtcas PUBLIC
-	    "../hidapi-0.8.0-rc1_Patched/hidapi")
-	find_library(IOKIT_FRAMEWORK IOKit)
-	find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
-	target_link_libraries(${PROJECT_NAME} ${COREFOUNDATION_FRAMEWORK}
-	    ${IOKIT_FRAMEWORK})
 endif(APPLE)
 if(WIN32)
 	target_include_directories(xtcas PUBLIC "..\\SDK\\CHeaders\\XPLM"
-	    "..\\SDK\\CHeaders\\Widgets" "..\\SDK\\CHeaders\\Wrappers"
-	    "../hidapi-0.8.0-rc1_Patched/hidapi")
+	    "..\\SDK\\CHeaders\\Widgets" "..\\SDK\\CHeaders\\Wrappers")
 endif(WIN32)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DXPLM200=1 -DXPLM210=1")
