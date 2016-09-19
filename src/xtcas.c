@@ -20,16 +20,17 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "helpers.h"
-#include "SL.h"
-#include "geom.h"
-#include "pos.h"
-#include "xplane.h"
 #include "avl.h"
+#include "helpers.h"
+#include "geom.h"
+#include "log.h"
+#include "pos.h"
+#include "SL.h"
+#include "thread.h"
+#include "time.h"
+#include "xplane.h"
 
 #include "xtcas.h"
-
-#define	BOGIE_TBL_SZ	128
 
 typedef enum {
 	RA_clb,
@@ -66,9 +67,17 @@ typedef struct tcas_acf {
 	avl_node_t node;	/* used by other_acf tree */
 } tcas_acf_t;
 
+#define	WORKER_LOOP_INTVAL	1000000		/* us */
+
+static mutex_t acf_lock;
 static tcas_acf_t my_acf;
 static avl_tree_t other_acf;
 static double last_t = 0;
+
+static condvar_t worker_cv;
+static thread_t worker_thr;
+static mutex_t worker_lock;
+static bool_t worker_shutdown = B_FALSE;
 
 static int
 acf_compar(const void *a, const void *b)
@@ -142,6 +151,19 @@ update_bogie_positions(double t)
 	free(pos);
 }
 
+static void
+main_loop(void *ignored)
+{
+	UNUSED(ignored);
+
+	mutex_enter(&worker_lock);
+	while (!worker_shutdown) {
+		cv_timedwait(&worker_cv, &worker_lock,
+		    microclock() + WORKER_LOOP_INTVAL);
+	}
+	mutex_exit(&worker_lock);
+}
+
 void
 xtcas_run(void)
 {
@@ -151,11 +173,15 @@ xtcas_run(void)
 	if (t <= last_t)
 		return;
 
+	mutex_enter(&acf_lock);
 	update_my_position(t);
 	update_bogie_positions(t);
 
-	if (!my_acf.acf_ready)
+	if (!my_acf.acf_ready) {
+		mutex_exit(&acf_lock);
 		return;
+	}
+	mutex_exit(&acf_lock);
 
 	sl = xtcas_SL_select(CUR_OBJ_ALT_MSL(&my_acf.pos),
 	    CUR_OBJ_ALT_AGL(&my_acf.pos));
@@ -169,6 +195,11 @@ xtcas_init(void)
 	memset(&my_acf, 0, sizeof (my_acf));
 	avl_create(&other_acf, acf_compar,
 	    sizeof (tcas_acf_t), offsetof(tcas_acf_t, node));
+	mutex_init(&acf_lock);
+
+	mutex_init(&worker_lock);
+	cv_init(&worker_cv);
+	assert(thread_create(&worker_thr, main_loop, NULL));
 }
 
 void
@@ -177,7 +208,17 @@ xtcas_fini(void)
 	void *cookie = NULL;
 	tcas_acf_t *p;
 
+	mutex_enter(&worker_lock);
+	worker_shutdown = B_TRUE;
+	cv_broadcast(&worker_cv);
+	mutex_exit(&worker_lock);
+	thread_join(&worker_thr);
+
 	while ((p = avl_destroy_nodes(&other_acf, &cookie)) != NULL)
 		free(p);
 	avl_destroy(&other_acf);
+	mutex_destroy(&acf_lock);
+
+	cv_destroy(&worker_cv);
+	mutex_destroy(&worker_lock);
 }

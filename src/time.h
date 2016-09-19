@@ -16,16 +16,12 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
-#include "thread.h"
+#ifndef	_XTCAS_TIME_H_
+#define	_XTCAS_TIME_H_
 
-#if	APL || LIN
+#include <stdlib.h>
 
-bool_t
-xtcas_cv_timedwait(condvar_t *cond, mutex_t *mtx, uint64_t microtime)
-{
-	struct timespec ts = { .tv_sec = microtime / 1000000,
-	    .tv_nsec = (microtime % 1000000) * 1000 };
-	return (pthread_cond_timedwait(cond, mtx, &ts) == 0);
-}
+uint64_t xtcas_microclock();
+#define	microclock	xtcas_microclock
 
-#endif	/* APL || LIN */
+#endif	/* _XTCAS_TIME_H_ */

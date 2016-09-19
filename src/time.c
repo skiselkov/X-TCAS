@@ -16,16 +16,25 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
-#include "thread.h"
+#if	IBM
+#include <windows.h>
+#else	/* !IBM */
+#include <sys/time.h>
+#endif	/* !IBM */
 
-#if	APL || LIN
+#include "time.h"
 
-bool_t
-xtcas_cv_timedwait(condvar_t *cond, mutex_t *mtx, uint64_t microtime)
+uint64_t
+xtcas_microclock(void)
 {
-	struct timespec ts = { .tv_sec = microtime / 1000000,
-	    .tv_nsec = (microtime % 1000000) * 1000 };
-	return (pthread_cond_timedwait(cond, mtx, &ts) == 0);
+#if	IBM
+    LARGE_INTEGER val, freq;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&val);
+    return ((val.QuadPart * 1000000llu) / freq.QuadPart);
+#else	/* !IBM */
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return ((tv.tv_sec * 1000000llu) + tv.tv_usec);
+#endif	/* !IBM */
 }
-
-#endif	/* APL || LIN */

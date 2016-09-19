@@ -17,9 +17,9 @@ cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
 SET(SRC SL.c avl.c geom.c helpers.c htbl.c list.c log.c math.c pos.c xplane.c
-    xtcas.c thread.c)
+    xtcas.c thread.c time.c)
 SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h htbl.h log.h list.h list_impl.h
-    math.h pos.h types.h xplane.h xtcas.h thread.h)
+    math.h pos.h types.h xplane.h xtcas.h time.h thread.h)
 
 SET(ALL_SRC ${SRC} ${HDR})
 LIST(SORT ALL_SRC)
@@ -39,7 +39,8 @@ endif()
 if(WIN32)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DCHECK_RESULT_USED=_Check_return_")
 else()
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -W -Wall -Wextra -Werror --std=c99 \
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -g -W -Wall -Wextra -Werror \
+	    --std=c99 \
 	    -DCHECK_RESULT_USED=\"__attribute__ ((warn_unused_result))\"")
 endif()
 

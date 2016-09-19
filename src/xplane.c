@@ -127,7 +127,7 @@ sim_intf_init(void)
 
 	avl_create(&acf_pos_tree, acf_pos_compar, sizeof (acf_pos_t),
 	    offsetof(acf_pos_t, tree_node));
-	xtcas_mutex_init(&acf_pos_lock);
+	mutex_init(&acf_pos_lock);
 
 	intf_inited = B_TRUE;
 }
@@ -155,7 +155,7 @@ sim_intf_fini(void)
 	while ((p = avl_destroy_nodes(&acf_pos_tree, &cookie)) != NULL)
 		free(p);
 	avl_destroy(&acf_pos_tree);
-	xtcas_mutex_destroy(&acf_pos_lock);
+	mutex_destroy(&acf_pos_lock);
 
 	intf_inited = B_FALSE;
 }
@@ -186,7 +186,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 		local.y = XPLMGetDatad(mp_plane_y_dr[i]);
 		local.z = XPLMGetDatad(mp_plane_z_dr[i]);
 
-		xtcas_mutex_enter(&acf_pos_lock);
+		mutex_enter(&acf_pos_lock);
 
 		srch.acf_id = (void *)(long)(i + 1);
 		pos = avl_find(&acf_pos_tree, &srch, &where);
@@ -210,7 +210,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 			pos->pos = world;
 		}
 
-		xtcas_mutex_exit(&acf_pos_lock);
+		mutex_exit(&acf_pos_lock);
 	}
 
 	return (1);
@@ -253,7 +253,7 @@ xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num)
 	size_t i;
 	acf_pos_t *pos;
 
-	xtcas_mutex_enter(&acf_pos_lock);
+	mutex_enter(&acf_pos_lock);
 	*num = avl_numnodes(&acf_pos_tree);
 	*pos_p = calloc(*num, sizeof (*pos));
 	for (pos = avl_first(&acf_pos_tree), i = 0; pos != NULL;
@@ -261,7 +261,7 @@ xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num)
 		ASSERT(i < *num);
 		memcpy(&(*pos_p)[i], pos, sizeof (*pos));
 	}
-	xtcas_mutex_exit(&acf_pos_lock);
+	mutex_exit(&acf_pos_lock);
 }
 
 PLUGIN_API int
