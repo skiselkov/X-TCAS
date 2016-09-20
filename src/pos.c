@@ -16,8 +16,8 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
-#include <assert.h>
 
+#include "helpers.h"
 #include "pos.h"
 
 #define	STEP_BACK(step)	((step) == 0 ? (NUM_POS_STEPS - 1) : (step) - 1)
@@ -31,7 +31,7 @@ xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
 	unsigned next_step = (pos->latest_step + 1) % NUM_POS_STEPS;
 
 	if (pos->populated_steps > 0)
-		assert(pos->time[pos->latest_step] < t);
+		ASSERT(pos->time[pos->latest_step] < t);
 
 	pos->time[next_step] = t;
 	pos->rad_alt[next_step] = rad_alt;
@@ -73,7 +73,7 @@ xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
 	    pos->time[STEP_BACK(STEP_BACK(pos->latest_step))];
 	if (gs != NULL) {
 		if (pos->populated_steps >= 2) {
-			assert(dt1 > 0.0);
+			ASSERT(dt1 > 0.0);
 			*gs = vect3_abs(vect3_sub(p1, p2)) / dt1;
 		} else {
 			return (B_FALSE);
@@ -81,8 +81,8 @@ xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
 	}
 	if (d_gs != NULL) {
 		if (pos->populated_steps >= 3) {
-			assert(dt1 > 0.0);
-			assert(dt2 > 0.0);
+			ASSERT(dt1 > 0.0);
+			ASSERT(dt2 > 0.0);
 			*d_gs = (vect3_abs(vect3_sub(p1, p2)) / dt1) -
 			    (vect3_abs(vect3_sub(p2, p3)) / dt2);
 		} else {
@@ -124,8 +124,8 @@ xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk)
 			double dt2 = pos->time[STEP_BACK(pos->latest_step)] -
 			    pos->time[STEP_BACK(STEP_BACK(pos->latest_step))];
 
-			assert(dt1 > 0.0);
-			assert(dt2 > 0.0);
+			ASSERT(dt1 > 0.0);
+			ASSERT(dt2 > 0.0);
 			*d_trk = (dir2hdg(vect2_sub(tp1, tp2)) -
 			    dir2hdg(vect2_sub(tp2, tp3))) / (dt1 + dt2);
 		} else {
@@ -154,7 +154,7 @@ xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
 
 	if (vvel != NULL) {
 		if (pos->populated_steps >= 2) {
-			assert(dt1 > 0.0);
+			ASSERT(dt1 > 0.0);
 			*vvel = (e1 - e2) / dt1;
 		} else {
 			return (B_FALSE);
@@ -162,8 +162,8 @@ xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
 	}
 	if (d_vvel != NULL) {
 		if (pos->populated_steps >= 3) {
-			assert(dt1 > 0.0);
-			assert(dt2 > 0.0);
+			ASSERT(dt1 > 0.0);
+			ASSERT(dt2 > 0.0);
 			*d_vvel = ((e1 - e2) / dt1) - ((e2 - e3) / dt2);
 		} else {
 			return (B_FALSE);

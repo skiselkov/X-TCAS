@@ -19,9 +19,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <assert.h>
 
 #include "XPLMUtilities.h"
+#include "helpers.h"
 #include "log.h"
 
 #define	XTCAS_PREFIX_LEN	8
@@ -46,7 +46,7 @@ void xtcas_log_v(const char *fmt, va_list ap)
     va_end(ap_copy);
 
     buf = (char *)malloc(len + XTCAS_PREFIX_LEN + 1);
-    assert(vsnprintf(buf + XTCAS_PREFIX_LEN, len + 1, fmt, ap) == len);
+    VERIFY(vsnprintf(buf + XTCAS_PREFIX_LEN, len + 1, fmt, ap) == len);
     memcpy(buf, XTCAS_PREFIX, XTCAS_PREFIX_LEN);
     XPLMDebugString(buf);
     free(buf);
