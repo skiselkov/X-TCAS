@@ -19,6 +19,9 @@
 #ifndef	_XTCAS_TYPES_H_
 #define	_XTCAS_TYPES_H_
 
+#include <stdint.h>
+#include <limits.h>
+
 #ifdef	__cplusplus
 extern "C" {
 #endif

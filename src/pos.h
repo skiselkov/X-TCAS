@@ -44,10 +44,9 @@ typedef struct obj_pos {
 
 void xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd,
     double rad_alt);
-bool_t xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs);
-bool_t xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk);
-bool_t xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel,
-    double *d_vvel);
+bool_t xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs);
+bool_t xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk);
+bool_t xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel);
 
 #ifdef __cplusplus
 }

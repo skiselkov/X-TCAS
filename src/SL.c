@@ -17,59 +17,202 @@
  */
 
 #include <stdlib.h>
+#include <math.h>
 
+#include "assert.h"
+#include "helpers.h"
 #include "SL.h"
 
-static const SL_t SL_table[] = {
-    {   /* SL2 */
-	.agl = 1, .alt_min = 0, .alt_max = 1000,
-	.tau_TA = 20, .tau_RA = 0, .dmod_TA = 0.30, .dmod_RA = 0.0,
-	.zthr_TA = 850, .zthr_RA = 0, .alim_RA = 0
+/*
+ * The sensitivity level table provides an altitude-dependent method of
+ * selecting the collision avoidance and resolution parameters. This is
+ * part of the TCAS II v7.1 specification.
+ *
+ * The fields in this table have the following meanings:
+ *	SL_id: Numeric sensitivity level identifier.
+ *	agl: Defines if the SL is based on radio altitude above ground
+ *		level or on barometric altitude
+ *	alt_min & alt_max: Define the vertical boundaries for when this
+ *		SL should be selected. If agl=true, alt_min & alt_max
+ *		are height AGL, otherwise they're baro altitude.
+ *	hyst_down: hysteresis value subtracted from alt_min if this SL was
+ *		previously selected.
+ *	hyst_up: hysteresis value added to alt_max if this SL was previously
+ *		selected.
+ *	tau_TA & tau_RA: The time-to-go to closest point of approach
+ *		(CPA) before issuing a Traffic Advisory (TA) or
+ *		Resolution Advisory (RA).
+ *	dmod_TA & dmod_RA: The horizontal radius of our protected
+ *		volume. If the intruder's CPA lies within this volume,
+ *		or the intruder itself crosses into this volume, we
+ *		either issue a TA or RA.
+ *	zthr_TA & zthr_RA: The vertical size of our protected volume
+ *		(centered on our aircraft). For a TA or RA to be issued,
+ *		both the horizontal and vertical range boundary rules
+ *		must be met.
+ *	alim_RA: TCAS normally attempts to select an RA which provides
+ *		the greatest vertical separation. However, it also wants
+ *		to select an RA which DOESN'T cross the intruder's
+ *		altitude before reaching CPA. If a non-crossing RA
+ *		provides at least alim_RA vertical separation at CPA, it
+ *		is selected. Otherwise the RA which provides the
+ *		greatest vertical separation is selected.
+ */
+
+#define	NUM_SL 8
+static const SL_t SL_table[NUM_SL] = {
+    {	/* SL1 */
+	.SL_id =	1,
+	.agl =		B_TRUE,
+	.alt_min =	0,
+	.alt_max =	FEET2MET(50),
+	.hyst_down =	0,
+	.hyst_up =	FEET2MET(10),
+	.tau_TA =	0,
+	.tau_RA =	0,
+	.dmod_TA =	0,
+	.dmod_RA =	0,
+	.zthr_TA =	0,
+	.zthr_RA =	0,
+	.alim_RA =	0
     },
-    {   /* SL3 */
-	.agl = 1, .alt_min = 1000, .alt_max = 2350,
-	.tau_TA = 25, .tau_RA = 15, .dmod_TA = 0.33, .dmod_RA = 0.20,
-	.zthr_TA = 850, .zthr_RA = 600, .alim_RA = 300
+    {	/* SL2 */
+	.SL_id =	2,
+	.agl =		B_TRUE,
+	.alt_min =	FEET2MET(50),
+	.alt_max =	FEET2MET(1000),
+	.hyst_down =	FEET2MET(10),
+	.hyst_up =	FEET2MET(100),
+	.tau_TA =	20,
+	.tau_RA =	0,
+	.dmod_TA =	NM2MET(0.30),
+	.dmod_RA =	0.0,
+	.zthr_TA =	FEET2MET(850),
+	.zthr_RA =	0,
+	.alim_RA =	0
     },
-    {   /* SL4 */
-	.agl = 0, .alt_min = 0, .alt_max = 5000,
-	.tau_TA = 30, .tau_RA = 20, .dmod_TA = 0.48, .dmod_RA = 0.35,
-	.zthr_TA = 850, .zthr_RA = 600, .alim_RA = 300
+    {	/* SL3 */
+	.SL_id =	3,
+	.agl =		B_TRUE,
+	.alt_min =	FEET2MET(1000),
+	.alt_max =	FEET2MET(2350),
+	.hyst_down =	FEET2MET(100),
+	.hyst_up =	FEET2MET(200),
+	.tau_TA =	25,
+	.tau_RA =	15,
+	.dmod_TA =	NM2MET(0.33),
+	.dmod_RA =	NM2MET(0.20),
+	.zthr_TA =	FEET2MET(850),
+	.zthr_RA =	FEET2MET(600),
+	.alim_RA =	FEET2MET(300)
     },
-    {   /* SL5 */
-	.agl = 0, .alt_min = 5000, .alt_max = 10000,
-	.tau_TA = 40, .tau_RA = 25, .dmod_TA = 0.75, .dmod_RA = 0.55,
-	.zthr_TA = 850, .zthr_RA = 600, .alim_RA = 350
+    {	/* SL4 */
+	.SL_id =	4,
+	.agl =		B_FALSE,
+	.alt_min =	0,
+	.alt_max =	FEET2MET(5000),
+	.hyst_down =	0,
+	.hyst_up =	FEET2MET(500),
+	.tau_TA =	30,
+	.tau_RA =	20,
+	.dmod_TA =	NM2MET(0.48),
+	.dmod_RA =	NM2MET(0.35),
+	.zthr_TA =	FEET2MET(850),
+	.zthr_RA =	FEET2MET(600),
+	.alim_RA =	FEET2MET(300)
     },
-    {   /* SL6 */
-	.agl = 0, .alt_min = 10000, .alt_max = 20000,
-	.tau_TA = 45, .tau_RA = 30, .dmod_TA = 1.00, .dmod_RA = 0.80,
-	.zthr_TA = 850, .zthr_RA = 600, .alim_RA = 400
+    {	/* SL5 */
+	.SL_id =	5,
+	.agl =		B_FALSE,
+	.alt_min =	FEET2MET(5000),
+	.alt_max =	FEET2MET(10000),
+	.hyst_down =	FEET2MET(500),
+	.hyst_up =	FEET2MET(500),
+	.tau_TA =	40,
+	.tau_RA =	25,
+	.dmod_TA =	NM2MET(0.75),
+	.dmod_RA =	NM2MET(0.55),
+	.zthr_TA =	FEET2MET(850),
+	.zthr_RA =	FEET2MET(600),
+	.alim_RA =	FEET2MET(350)
     },
-    {   /* SL7 below 42000 ft */
-	.agl = 0, .alt_min = 20000, .alt_max = 42000,
-	.tau_TA = 48, .tau_RA = 35, .dmod_TA = 1.30, .dmod_RA = 1.10,
-	.zthr_TA = 850, .zthr_RA = 700, .alim_RA = 600
+    {	/* SL6 */
+	.SL_id =	6,
+	.agl =		B_FALSE,
+	.alt_min =	FEET2MET(10000),
+	.alt_max =	FEET2MET(20000),
+	.hyst_down =	FEET2MET(500),
+	.hyst_up =	FEET2MET(500),
+	.tau_TA =	45,
+	.tau_RA =	30,
+	.dmod_TA =	NM2MET(1.00),
+	.dmod_RA =	NM2MET(0.80),
+	.zthr_TA =	FEET2MET(850),
+	.zthr_RA =	FEET2MET(600),
+	.alim_RA =	FEET2MET(400)
     },
-    {   /* SL7 above 42000 ft */
-	.agl = 0, .alt_min = 42000, .alt_max = -1u,
-	.tau_TA = 48, .tau_RA = 35, .dmod_TA = 1.30, .dmod_RA = 1.10,
-	.zthr_TA = 1200, .zthr_RA = 800, .alim_RA = 700
+    {	/* SL7 below 42000 ft */
+	.SL_id =	7,
+	.agl =		B_FALSE,
+	.alt_min =	FEET2MET(20000),
+	.alt_max =	FEET2MET(42000),
+	.hyst_down =	FEET2MET(500),
+	.hyst_up =	FEET2MET(500),
+	.tau_TA =	48,
+	.tau_RA =	35,
+	.dmod_TA =	NM2MET(1.30),
+	.dmod_RA =	NM2MET(1.10),
+	.zthr_TA =	FEET2MET(850),
+	.zthr_RA =	FEET2MET(700),
+	.alim_RA =	FEET2MET(600)
     },
-    {
-	.alt_min = 0, .alt_max = 0
+    {	/* SL7 above 42000 ft */
+	.SL_id =	8,
+	.agl =		B_FALSE,
+	.alt_min =	FEET2MET(42000),
+	.alt_max =	INFINITY,
+	.hyst_down =	FEET2MET(500),
+	.hyst_up =	FEET2MET(500),
+	.tau_TA =	48,
+	.tau_RA =	35,
+	.dmod_TA =	NM2MET(1.30),
+	.dmod_RA =	NM2MET(1.10),
+	.zthr_TA =	FEET2MET(1200),
+	.zthr_RA =	FEET2MET(800),
+	.alim_RA =	FEET2MET(700)
     }
 };
 
+/*
+ * Selects the appropriate TCAS sensitivity level based on previously selected
+ * sensitivity level (prev_SL_id), altitude AMSL (alt_msl) and altitude AGL
+ * (alt_agl). If force_select_SL is non-zero, this forcibly selects the given
+ * SL based on SL_id (must be between 1 and 8 inclusive).
+ */
 const SL_t *
-xtcas_SL_select(unsigned alt_msl, unsigned alt_agl)
+xtcas_SL_select(unsigned prev_SL_id, double alt_msl, double alt_agl,
+    unsigned force_select_SL)
 {
-	for (int i = 0; SL_table[i].alt_min != SL_table[i].alt_max; i++) {
+	if (force_select_SL != 0) {
+		VERIFY3U(force_select_SL, >=, 1);
+		VERIFY3U(force_select_SL, <=, 8);
+		return (&SL_table[force_select_SL - 1]);
+	}
+
+	for (int i = 0; i < NUM_SL; i++) {
 		const SL_t *sl = &SL_table[i];
-		if ((sl->agl && alt_agl >= sl->alt_min &&
-		    alt_agl < sl->alt_max) || (!sl->agl &&
-		    alt_msl >= sl->alt_min && alt_msl < sl->alt_max))
+		double min, max;
+
+		if (prev_SL_id == sl->SL_id) {
+			min = sl->alt_min - sl->hyst_down;
+			max = sl->alt_max + sl->hyst_up;
+		} else {
+			min = sl->alt_min;
+			max = sl->alt_max;
+		}
+		if ((sl->agl && alt_agl >= min && alt_agl < max) ||
+		    (!sl->agl && alt_msl >= min && alt_msl < max))
 			return (sl);
 	}
-	return (NULL);
+	abort();
 }

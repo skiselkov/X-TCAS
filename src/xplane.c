@@ -27,6 +27,7 @@
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
 
+#include "assert.h"
 #include "avl.h"
 #include "geom.h"
 #include "log.h"
@@ -90,7 +91,7 @@ find_dr_chk(XPLMDataTypeID type, const char *fmt, ...)
 
 	XPLMDataRef dr = XPLMFindDataRef(name);
 	ASSERT(dr != NULL);
-	ASSERT((XPLMGetDataRefTypes(dr) & type) == type);
+	ASSERT3U((XPLMGetDataRefTypes(dr) & type), ==, type);
 
 	return (dr);
 }
@@ -258,10 +259,16 @@ xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num)
 	*pos_p = calloc(*num, sizeof (*pos));
 	for (pos = avl_first(&acf_pos_tree), i = 0; pos != NULL;
 	    pos = AVL_NEXT(&acf_pos_tree, pos), i++) {
-		ASSERT(i < *num);
+		ASSERT3U(i, <, *num);
 		memcpy(&(*pos_p)[i], pos, sizeof (*pos));
 	}
 	mutex_exit(&acf_pos_lock);
+}
+
+bool_t
+xtcas_view_is_external(void)
+{
+	return (B_FALSE);
 }
 
 PLUGIN_API int

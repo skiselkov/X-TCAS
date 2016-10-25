@@ -40,6 +40,7 @@ typedef struct {
 double xtcas_get_time(void);
 void xtcas_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl);
 void xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num);
+bool_t xtcas_view_is_external(void);
 
 /*
  * X-Plane-specific plugin hooks.

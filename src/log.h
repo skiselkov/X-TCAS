@@ -26,8 +26,37 @@
 extern "C" {
 #endif
 
-void xtcas_log(const char *fmt, ...) PRINTF_ATTR(1);
-void xtcas_log_v(const char *fmt, va_list ap);
+typedef struct {
+	int	all;
+	int	snd;
+	int	wav;
+} dbg_info_t;
+
+extern dbg_info_t xtcas_dbg;
+
+void xtcas_log_impl(const char *filename, int line,
+    const char *fmt, ...) PRINTF_ATTR(3);
+void xtcas_log_impl_v(const char *filename, int line, const char *fmt,
+    va_list ap);
+void xtcas_log_backtrace(void);
+
+#define	logMsg(...) \
+	xtcas_log_impl(NULL, 0, log_basename(__FILE__), __LINE__, __VA_ARGS__)
+
+#if	defined(__GNUC__) || defined(__clang__)
+#define	xtcas_basename(f) (__builtin_strrchr(f, BUILD_DIRSEP) ? \
+	__builtin_strrchr(f, BUILD_DIRSEP) + 1 : f)
+#else	/* !__GNUC__ && !__clang__ */
+const char *xtcas_basename(const char *filename);
+#endif	/* !__GNUC__ && !__clang__ */
+
+#define	dbg_log(class, level, ...) \
+	do { \
+		if (xtcas_dbg.class >= level || xtcas_dbg.all >= level) { \
+			xtcas_log_impl(xtcas_basename(__FILE__), __LINE__,  \
+			    "[" #class "/" #level "]: " __VA_ARGS__); \
+		} \
+	} while (0)
 
 #ifdef __cplusplus
 }

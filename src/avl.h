@@ -22,9 +22,6 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * Portions Copyright 2013 SOLSQUARE Ltd. All rights reserved.
- */
 
 #ifndef	_AVL_H
 #define	_AVL_H

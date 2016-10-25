@@ -16,7 +16,7 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
-
+#include "assert.h"
 #include "helpers.h"
 #include "pos.h"
 
@@ -31,7 +31,7 @@ xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
 	unsigned next_step = (pos->latest_step + 1) % NUM_POS_STEPS;
 
 	if (pos->populated_steps > 0)
-		ASSERT(pos->time[pos->latest_step] < t);
+		ASSERT3F(pos->time[pos->latest_step], <, t);
 
 	pos->time[next_step] = t;
 	pos->rad_alt[next_step] = rad_alt;
@@ -46,11 +46,11 @@ xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
  * first derivative.
  */
 bool_t
-xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
+xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs)
 {
-	geo_pos3_t p1_2d, p2_2d, p3_2d;
-	vect3_t p1, p2, p3;
-	double dt1, dt2;
+	geo_pos3_t p1_2d, p2_2d;
+	vect3_t p1, p2;
+	double dt1;
 
 	/*
 	 * Strip the elevation part from the positions to transform the
@@ -61,30 +61,15 @@ xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
 	p1_2d.elev = 0;
 	p2_2d = pos->pos[STEP_BACK(pos->latest_step)];
 	p2_2d.elev = 0;
-	p3_2d = pos->pos[STEP_BACK(STEP_BACK(pos->latest_step))];
-	p3_2d.elev = 0;
 
 	p1 = geo2ecef(p1_2d, &wgs84);
 	p2 = geo2ecef(p2_2d, &wgs84);
-	p3 = geo2ecef(p3_2d, &wgs84);
 	dt1 = pos->time[pos->latest_step] -
 	    pos->time[STEP_BACK(pos->latest_step)];
-	dt2 = pos->time[STEP_BACK(pos->latest_step)] -
-	    pos->time[STEP_BACK(STEP_BACK(pos->latest_step))];
 	if (gs != NULL) {
 		if (pos->populated_steps >= 2) {
-			ASSERT(dt1 > 0.0);
+			ASSERT3F(dt1, >, 0.0);
 			*gs = vect3_abs(vect3_sub(p1, p2)) / dt1;
-		} else {
-			return (B_FALSE);
-		}
-	}
-	if (d_gs != NULL) {
-		if (pos->populated_steps >= 3) {
-			ASSERT(dt1 > 0.0);
-			ASSERT(dt2 > 0.0);
-			*d_gs = (vect3_abs(vect3_sub(p1, p2)) / dt1) -
-			    (vect3_abs(vect3_sub(p2, p3)) / dt2);
 		} else {
 			return (B_FALSE);
 		}
@@ -98,39 +83,22 @@ xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs, double *d_gs)
  * derivative.
  */
 bool_t
-xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk)
+xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk)
 {
 	fpp_t fpp;
 	geo_pos3_t p1 = pos->pos[pos->latest_step];
 	geo_pos3_t p2 = pos->pos[STEP_BACK(pos->latest_step)];
-	geo_pos3_t p3 = pos->pos[STEP_BACK(STEP_BACK(pos->latest_step))];
-	vect2_t tp1, tp2, tp3;
+	vect2_t tp1, tp2;
 
 	fpp = ortho_fpp_init(GEO3_TO_GEO2(p2), 0, &wgs84, B_FALSE);
 	tp1 = geo2fpp(GEO3_TO_GEO2(p1), &fpp);
 	tp2 = geo2fpp(GEO3_TO_GEO2(p2), &fpp);
-	tp3 = geo2fpp(GEO3_TO_GEO2(p3), &fpp);
 
 	if (trk != NULL) {
 		if (pos->populated_steps >= 2)
 			*trk = dir2hdg(vect2_sub(tp1, tp2));
 		else
 			return (B_FALSE);
-	}
-	if (d_trk != NULL) {
-		if (pos->populated_steps >= 3) {
-			double dt1 = pos->time[pos->latest_step] -
-			    pos->time[STEP_BACK(pos->latest_step)];
-			double dt2 = pos->time[STEP_BACK(pos->latest_step)] -
-			    pos->time[STEP_BACK(STEP_BACK(pos->latest_step))];
-
-			ASSERT(dt1 > 0.0);
-			ASSERT(dt2 > 0.0);
-			*d_trk = (dir2hdg(vect2_sub(tp1, tp2)) -
-			    dir2hdg(vect2_sub(tp2, tp3))) / (dt1 + dt2);
-		} else {
-			return (B_FALSE);
-		}
 	}
 	return (B_TRUE);
 }
@@ -140,13 +108,11 @@ xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk, double *d_trk)
  * derivative.
  */
 bool_t
-xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
+xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel)
 {
 	double e1, e2, e3;
 	double dt1 = pos->time[pos->latest_step] -
 	    pos->time[STEP_BACK(pos->latest_step)];
-	double dt2 = pos->time[STEP_BACK(pos->latest_step)] -
-	    pos->time[STEP_BACK(STEP_BACK(pos->latest_step))];
 
 	e1 = pos->pos[pos->latest_step].elev;
 	e2 = pos->pos[STEP_BACK(pos->latest_step)].elev;
@@ -154,17 +120,8 @@ xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
 
 	if (vvel != NULL) {
 		if (pos->populated_steps >= 2) {
-			ASSERT(dt1 > 0.0);
+			ASSERT3F(dt1, >, 0.0);
 			*vvel = (e1 - e2) / dt1;
-		} else {
-			return (B_FALSE);
-		}
-	}
-	if (d_vvel != NULL) {
-		if (pos->populated_steps >= 3) {
-			ASSERT(dt1 > 0.0);
-			ASSERT(dt2 > 0.0);
-			*d_vvel = ((e1 - e2) / dt1) - ((e2 - e3) / dt2);
 		} else {
 			return (B_FALSE);
 		}

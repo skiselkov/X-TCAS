@@ -22,6 +22,7 @@
 #include <math.h>
 #include <ctype.h>
 
+#include "assert.h"
 #include "helpers.h"
 
 /*
@@ -242,4 +243,56 @@ append_format(char **str, size_t *sz, const char *format, ...)
 	(void) vsnprintf(*str + *sz, *sz + needed + 1, format, ap);
 	*sz += needed;
 	va_end(ap);
+}
+
+/*
+ * Creates a file path string from individual path components. The
+ * components are provided as separate filename arguments and the list needs
+ * to be terminated with a NULL argument. The returned string can be freed
+ * via free().
+ */
+char *
+mkpathname(const char *comp, ...)
+{
+	char *res;
+	va_list ap;
+
+	va_start(ap, comp);
+	res = mkpathname_v(comp, ap);
+	va_end(ap);
+
+	return (res);
+}
+
+char *
+mkpathname_v(const char *comp, va_list ap)
+{
+	size_t n = 0, len = 0;
+	char *str;
+	va_list ap2;
+
+	ASSERT(ap != NULL);
+
+	va_copy(ap2, ap);
+	len = strlen(comp);
+	for (const char *c = va_arg(ap2, const char *); c != NULL;
+	    c = va_arg(ap2, const char *)) {
+		len += 1 + strlen(c);
+	}
+	va_end(ap2);
+
+	str = malloc(len + 1);
+	n += snprintf(str, len + 1, "%s", comp);
+	for (const char *c = va_arg(ap, const char *); c != NULL;
+	    c = va_arg(ap, const char *)) {
+		ASSERT(n < len);
+		n += snprintf(&str[n], len - n + 1, "%c%s", DIRSEP, c);
+		/* kill a trailing directory separator */
+		if (str[n - 1] == DIRSEP) {
+			str[n - 1] = 0;
+			n--;
+		}
+	}
+
+	return (str);
 }

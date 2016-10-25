@@ -29,15 +29,22 @@
 extern "C" {
 #endif
 
+
 #if	defined(__GNUC__) || defined(__clang__)
+#define	BUILD_DIRSEP	'/'
 #define	PRINTF_ATTR(x)	__attribute__ ((format (printf, x, x + 1)))
 #ifndef	BSWAP32
+#define	BSWAP16(x)	__builtin_bswap16((x))
 #define	BSWAP32(x)	__builtin_bswap32((x))
 #define	BSWAP64(x)	__builtin_bswap64((x))
 #endif	/* BSWAP32 */
-#else	/* __GNUC */
+#else	/* !defined(__GNUC__) && !defined(__clang__) */
+#define	BUILD_DIRSEP	'\\'
 #define	PRINTF_ATTR(x)
 #ifndef	BSWAP32
+#define	BSWAP16(x)	\
+	((((x) & 0xff00) >> 8) | \
+	(((x) & 0x00ff) << 8))
 #define	BSWAP32(x)	\
 	(((x) >> 24) | \
 	(((x) & 0x0000ff00) << 8) | \
@@ -53,13 +60,16 @@ extern "C" {
 	(((x) & 0x00ff000000000000llu) >> 40) | \
 	((x) << 56))
 #endif	/* BSWAP32 */
-#endif	/* __GNUC */
+#endif	/* !defined(__GNUC__) && !defined(__clang__) */
 
-#ifdef	WINDOWS
-#define	PATHSEP	"\\"
-#else
-#define	PATHSEP	"/"
-#endif
+#if	IBM
+#define	DIRSEP		'\\'
+#define	DIRSEP_S	"\\"    /* DIRSEP as a string */
+#else	/* !IBM */
+#define	DIRSEP		'/'
+#define	DIRSEP_S	"/"     /* DIRSEP as a string */
+#define	MAX_PATH	512
+#endif	/* !IBM */
 
 /* Minimum/Maximum allowable elevation AMSL of anything */
 #define	MIN_ELEV	-2000.0
@@ -76,23 +86,8 @@ extern "C" {
 #define	MIN_ARC_RADIUS	0.1
 #define	MAX_ARC_RADIUS	100.0
 
-#define	UNUSED(x)		((void)(x))
-#ifdef	DEBUG
-#define	ASSERT(x)		assert(x)
-#define	UNUSED_NODEBUG(x)
-#else	/* !DEBUG */
-#define	ASSERT(x)		UNUSED(x)
-#define	UNUSED_NODEBUG(x)	UNUSED(x)
-#endif	/* !DEBUG */
-#define	VERIFY(x)		assert(x)
-
-/*
- * Compile-time assertion. The condition 'x' must be constant.
- */
-#define	CTASSERT(x)		_CTASSERT(x, __LINE__)
-#define	_CTASSERT(x, y)		__CTASSERT(x, y)
-#define	__CTASSERT(x, y)	\
-	typedef char __compile_time_assertion__ ## y [(x) ? 1 : -1]
+#define	UNUSED_ATTR		__attribute__((unused))
+#define	UNUSED(x)		do { (void) sizeof (x); } while (0)
 
 /*
  * Length and velocity unit conversions.
@@ -103,6 +98,8 @@ extern "C" {
 #define	MET2NM(x)	((x) / 1852.0)		/* meters to nautical miles */
 #define	KT2MPS(k)	(NM2MET(k) / 3600)	/* knots to m/s */
 #define	MPS2KT(k)	(MET2NM(k) * 3600)	/* m/s to knots */
+#define	FPM2MPS(f)	FEET2MET((f) / 60.0)	/* ft.min^-1 to m.s^-1 */
+#define	MPS2FPM(m)	MET2FEET((m) * 60.0)	/* m.s^-1 to ft.min^-1 */
 
 /* generic parser validator helpers */
 
@@ -170,6 +167,9 @@ void strip_space(char *line);
 void append_format(char **str, size_t *sz, const char *format, ...)
     PRINTF_ATTR(3);
 
+char *mkpathname(const char *comp, ...);
+char *mkpathname_v(const char *comp, va_list ap);
+
 #if	defined(__GNUC__) || defined(__clang__)
 #define	highbit64(x)	(64 - __builtin_clzll(x) - 1)
 #define	highbit32(x)	(32 - __builtin_clzll(x) - 1)
@@ -186,16 +186,6 @@ void append_format(char **str, size_t *sz, const char *format, ...)
 #define	MAX(x, y)	((x) > (y) ? (x) : (y))
 #define	AVG(x, y)	(((x) + (y)) / 2)
 #endif	/* MIN or MAX */
-
-/*
- * Weighted avg, 'w' is weight fraction from 0.0 = all of x to 1.0 = all of y.
- */
-static inline double
-wavg(double x, double y, double w)
-{
-	ASSERT(w >= 0.0 && w <= 1.0);
-	return (x + (y - x) * w);
-}
 
 #ifdef	__cplusplus
 }

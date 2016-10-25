@@ -97,6 +97,9 @@ typedef struct {
 #define	IS_ZERO_VECT2(a)	((a).x == 0.0 && (a).y == 0.0)
 #define	IS_ZERO_VECT3(a)	((a).x == 0.0 && (a).y == 0.0 && (a).z == 0.0)
 
+#define	VECT2_TO_VECT3(v, z)	((vect3_t){(v).x, (v).y, (z)})
+#define	VECT3_TO_VECT2(v)	((vect2_t){(v).x, (v).y})
+
 #define	GEO2_TO_GEO3(v, a)	((geo_pos3_t){(v).lat, (v).lon, (a)})
 #define	GEO3_TO_GEO2(v)		((geo_pos2_t){(v).lat, (v).lon})
 
@@ -177,6 +180,9 @@ vect2_t vect2vect_isect(vect2_t da, vect2_t oa, vect2_t db, vect2_t ob,
     bool_t confined);
 unsigned circ2circ_isect(vect2_t ca, double ra, vect2_t cb, double rb,
     vect2_t i[2]);
+unsigned vect2poly_isect(vect2_t a, vect2_t oa, const vect2_t *poly,
+    size_t poly_n);
+bool_t point_in_poly(vect2_t pt, vect2_t *poly, size_t poly_n);
 
 /*
  * Converting between headings and direction vectors on a 2D plane.

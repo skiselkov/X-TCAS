@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "assert.h"
 #include "math.h"
 #include "helpers.h"
 #include "geom.h"
@@ -726,11 +727,26 @@ vect2vect_isect(vect2_t a, vect2_t oa, vect2_t b, vect2_t ob, bool_t confined)
 	return (r);
 }
 
+/*
+ * Computes the intersection of two circles. The circles are centered at
+ * `ca' and `cb' and have radii `ra' and `rb' respectively.
+ * The `i' argument must point to an array capable of holding at least two
+ * points, which will be filled with the intersection points.
+ * The function returns the number of intersections (and appropriate slots
+ * filled in `i'). Possible values are:
+ *	0: the circles do not intersect.
+ *	1: the circles touch in one point.
+ *	2: the circles intersection at two points.
+ *	UINT_MAX: the circles are identical (`i' is NOT populated).
+ */
 unsigned
 circ2circ_isect(vect2_t ca, double ra, vect2_t cb, double rb, vect2_t i[2])
 {
 	double a, d, h;
 	vect2_t ca_cb, p2, ca_p2;
+
+	if (VECT2_EQ(ca, cb) && ra == rb)
+		return (UINT_MAX);
 
 	ca_cb = vect2_sub(cb, ca);
 	d = vect2_abs(ca_cb);
@@ -757,6 +773,54 @@ circ2circ_isect(vect2_t ca, double ra, vect2_t cb, double rb, vect2_t i[2])
 		ASSERT(!IS_NULL_VECT(i[0]) && !IS_NULL_VECT(i[1]));
 		return (2);
 	}
+}
+
+/*
+ * Computes the intersection between a vector with origin `oa' and
+ * direction & magnited `a', and a closed polygon described by the
+ * points `poly' (the number of points in `poly_n'). The polygon MUST
+ * consist of at least two points.
+ * Returns the number of intersections between the vector and polygon. This
+ * function only tests if the vector intersects the polygon's sides. If the
+ * vector lies completely inside the polygon, this function returns 0.
+ */
+unsigned
+vect2poly_isect(vect2_t a, vect2_t oa, const vect2_t *poly, size_t poly_n)
+{
+	unsigned n_isects = 0;
+
+	ASSERT3U(poly_n, >=, 2);
+	for (size_t i = 0; i < poly_n; i++) {
+		vect2_t pt1 = poly[i];
+		vect2_t pt2 = poly[(i + 1) % poly_n];
+		vect2_t v = vect2_sub(pt2, pt1);
+		vect2_t isect = vect2vect_isect(a, oa, v, pt1, B_TRUE);
+		if (!IS_NULL_VECT(isect))
+			n_isects++;
+	}
+
+	return (n_isects);
+}
+
+/*
+ * Checks if the point `pt' lies inside of a closed polygon. See
+ * vect2poly_isect for more details on polygons.
+ * Returns B_TRUE if the point lies inside of thep polygon (or on one
+ * of its sides) or B_FALSE otherwise.
+ */
+bool_t
+point_in_poly(vect2_t pt, vect2_t *poly, size_t poly_n)
+{
+	ASSERT3U(poly_n, >=, 2);
+	/*
+	 * The simplest approach is ray casting. Construct a vector from `pt'
+	 * to a point very far away and count how many edges of the polygon
+	 * we hit. If we hit an even number, we're outside, otherwise we're
+	 * inside.
+	 */
+	vect2_t v = vect2_sub(VECT2(1e20, 1e20), pt);
+	unsigned isects = vect2poly_isect(v, pt, poly, poly_n);
+	return ((isects & 1) != 0);
 }
 
 /*
@@ -813,7 +877,7 @@ geo_displace_dir(const ellip_t *ellip, geo_pos2_t pos, vect2_t dir, double dist)
 unsigned
 sphere_lat_subdiv(double radius, double partition_sz)
 {
-	ASSERT(radius >= partition_sz);
+	ASSERT3F(radius, >=, partition_sz);
 	return (ceil((radius * M_PI) / partition_sz) + 1);
 }
 
@@ -825,8 +889,9 @@ sphere_lat_subdiv(double radius, double partition_sz)
 unsigned
 sphere_lon_subdiv(double radius, double lat, double partition_sz)
 {
-	ASSERT(lat >= -90.0 && lat <= 90.0);
-	ASSERT(radius >= partition_sz);
+	ASSERT3F(lat, >=, -90.0);
+	ASSERT3F(lat, <=, 90.0);
+	ASSERT3F(radius, >=, partition_sz);
 	double r = cos(DEG2RAD(lat)) * radius;
 	return (ceil((2 * M_PI * r) / partition_sz));
 }
@@ -1375,8 +1440,9 @@ quad_bezier_func(double x, const bezier_t *func)
 			 * value and use it in the bezier curve equation at
 			 * the top to obtain the function value at point 'x'.
 			 */
-			ASSERT(p0.x < p2.x);
-			ASSERT(p0.x <= p1.x && p1.x <= p2.x);
+			ASSERT3F(p0.x, <, p2.x);
+			ASSERT3F(p0.x, <=, p1.x);
+			ASSERT3F(p1.x, <=, p2.x);
 			n = quadratic_solve(p2.x - 2 * p1.x + p0.x,
 			    2 * (p1.x - p0.x), p0.x - x, ts);
 			ASSERT(n != 0);
@@ -1387,14 +1453,15 @@ quad_bezier_func(double x, const bezier_t *func)
 			} else {
 				continue;
 			}
-			ASSERT(t >= 0.0 && t <= 1.0);
+			ASSERT3F(t, >=, 0.0);
+			ASSERT3F(t, <=, 1.0);
 			y = POW2(1 - t) * p0.y + 2 * (1 - t) * t * p1.y +
 			    POW2(t) * p2.y;
 
 			return (y);
 		}
 	}
-	assert(0);
+	VERIFY(0);
 }
 
 /*

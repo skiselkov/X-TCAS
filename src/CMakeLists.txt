@@ -16,10 +16,11 @@
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
-SET(SRC SL.c avl.c geom.c helpers.c htbl.c list.c log.c math.c pos.c xplane.c
-    xtcas.c thread.c time.c)
-SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h htbl.h log.h list.h list_impl.h
-    math.h pos.h types.h xplane.h xtcas.h time.h thread.h)
+SET(SRC SL.c avl.c geom.c helpers.c list.c log.c math.c pos.c xplane.c
+    xtcas.c thread.c time.c wav.c snd_sys.c riff.c)
+SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h log.h list.h list_impl.h
+    math.h pos.h types.h xplane.h xtcas.h time.h thread.h wav.h snd_sys.h
+    riff.h)
 
 SET(ALL_SRC ${SRC} ${HDR})
 LIST(SORT ALL_SRC)
@@ -47,10 +48,12 @@ endif()
 #libraries
 if(UNIX)
 	include_directories(xtcas PUBLIC "../SDK/CHeaders/XPLM/"
-	    "../SDK/CHeaders/Widgets/" "../SDK/CHeaders/Wrappers/")
+	    "../SDK/CHeaders/Widgets/" "../SDK/CHeaders/Wrappers/"
+	    "../OpenAL/include")
 endif(UNIX)
 if(APPLE)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -Wno-deprecated")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=10.7")
 endif(APPLE)
 if(WIN32)
 	target_include_directories(xtcas PUBLIC "..\\SDK\\CHeaders\\XPLM"
@@ -73,7 +76,9 @@ if(APPLE)
 	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(XPLM_LIBRARY XPLM ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(XPWIDGETS_LIBRARY XPWidgets ../SDK/Libraries/Mac/)
-	target_link_libraries(xtcas ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY})
+	FIND_LIBRARY(OPENAL_LIBRARY OpenAL)
+	target_link_libraries(xtcas ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY}
+	    ${OPENAL_LIBRARY})
 elseif(UNIX)
 	INCLUDE(FindPkgConfig)
 	pkg_check_modules(UDEV REQUIRED libudev)
