@@ -48,16 +48,17 @@
 #define	SUBSEQ_RA_D_VVEL	(EARTH_G / 3)	/* 1/3 g */
 #define	SUBSEQ_RA_DELAY		2.5		/* seconds */
 
-#define	OTH_TFC_DIST_THRESH	NM2MET(40)
-#define	PROX_DIST_THRESH	NM2MET(6)
-#define	PROX_ALT_THRESH		FEET2MET(1200)
+#define	OTH_TFC_DIST_THRESH		NM2MET(40)
+#define	PROX_DIST_THRESH		NM2MET(6)
+#define	PROX_ALT_THRESH			FEET2MET(1200)
+#define	ON_GROUND_AGL_CHK_THRESH	FEET2MET(1700)
 
 #define	PRINTF_ACF_FMT "alt_rptg:%d  pos:%3.04f/%2.4f/%4.1f  agl:%.0f  " \
-	"gs:%.1f  trk:%.0f  trk_v:%.2fx%.2f  vvel:%.1f"
+	"gs:%.1f  trk:%.0f  trk_v:%.2fx%.2f  vvel:%.1f  ongnd:%d"
 #define	PRINTF_ACF_ARGS(acf) \
 	(acf)->alt_rptg, (acf)->cur_pos.lat, (acf)->cur_pos.lon, \
 	(acf)->cur_pos.elev, (acf)->agl, (acf)->gs, (acf)->trk, \
-	(acf)->trk_v.x, (acf)->trk_v.y, (acf)->vvel
+	(acf)->trk_v.x, (acf)->trk_v.y, (acf)->vvel, (acf)->on_ground
 
 typedef enum {
 	OTH_THREAT,		/* other traffic, empty diamond */
@@ -81,6 +82,7 @@ typedef struct tcas_acf {
 	double	vvel;		/* computed vertical velocity in m/s */
 	bool_t	trend_data_ready; /* indicates if gs/trk/vvel is available */
 	bool_t	up_to_date;	/* used for efficient position updates */
+	bool_t	on_ground;	/* on-ground condition */
 	cpa_t	*cpa;		/* CPA this aircraft participates in */
 	threat_t	threat;	/* type of TCAS threat */
 
@@ -148,12 +150,19 @@ typedef enum {
 	TCAS_MODE_TAONLY
 } tcas_mode_t;
 
+typedef enum {
+	TCAS_FILTER_NONE,
+	TCAS_FILTER_ABV,
+	TCAS_FILTER_BLW
+} tcas_filter_t;
+
 typedef struct {
 	tcas_adv_t	adv_state;
 	tcas_RA_t	*ra;
 	double		initial_ra_vs;	/* VS when first RA was issued */
 	uint64_t	change_t;	/* microclock() timestamp */
 	tcas_mode_t	mode;
+	tcas_filter_t	filter;
 } tcas_state_t;
 
 struct cpa {
@@ -473,11 +482,13 @@ update_my_position(double t)
  * deltas
  */
 static void
-update_bogie_positions(double t, geo_pos2_t my_pos)
+update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 {
 	acf_pos_t *pos;
 	size_t count;
-	fpp_t fpp = stereo_fpp_init(my_pos, 0, &wgs84, B_FALSE);
+	fpp_t fpp = stereo_fpp_init(GEO3_TO_GEO2(my_pos), 0, &wgs84, B_FALSE);
+	double gnd_level = (my_alt_agl <= ON_GROUND_AGL_CHK_THRESH) ?
+	    (my_pos.elev - my_alt_agl) : MIN_ELEV;
 
 	ops->get_oth_acf_pos(&pos, &count);
 
@@ -512,8 +523,10 @@ update_bogie_positions(double t, geo_pos2_t my_pos)
 		    xtcas_obj_pos_get_gs(&acf->pos_upd, &acf->gs) &&
 		    xtcas_obj_pos_get_trk(&acf->pos_upd, &acf->trk) &&
 		    xtcas_obj_pos_get_vvel(&acf->pos_upd, &acf->vvel));
-		if (acf->trend_data_ready)
-			my_acf_glob.trk_v = hdg2dir(my_acf_glob.trk);
+		my_acf_glob.trk_v = (acf->trend_data_ready) ?
+		    hdg2dir(my_acf_glob.trk) : NULL_VECT2;
+		acf->on_ground = (acf->alt_rptg &&
+		    acf->cur_pos.elev < gnd_level);
 		/* mark acf as up-to-date */
 		acf->up_to_date = B_TRUE;
 
@@ -1026,27 +1039,42 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 			ra->vs_corr_reqd = roundmul(ri->vs.out.max -
 			    my_acf->vvel, ALT_ROUND_MUL);
 		}
-		avl_add(&prio, ra);
-	}
-	ASSERT(avl_numnodes(&prio) != 0);
-
-	/*
-	 * Pick an RA that makes sense from a sequencing standpoint.
-	 * We want to prevent a CLB/DES MORE RA from reducing to a regular
-	 * CLB or CROSS CLB RA. In those cases, we want to either LEVEL OFF
-	 * or perform a sense reversal.
-	 */
-	for (ra = avl_first(&prio); ra != NULL; ra = avl_first(&prio)) {
-		if ((prev_ra->info->msg == RA_MSG_CLB_MORE &&
+		/*
+		 * RA filtering conditions:
+		 */
+		if (/* 1) Above FL480 we want to inhibit climb RAs. */
+		    (my_acf->cur_pos.elev > INHIBIT_CLB_RA &&
+		    (ra->info->msg == RA_MSG_CLB ||
+		    ra->info->msg == RA_MSG_CLB_CROSS ||
+		    ra->info->msg == RA_MSG_CLB_MORE ||
+		    ra->info->msg == RA_MSG_CLB_NOW)) ||
+		    /* 2) Inhibit INCREASE DESCENT RAs below 1550ft AGL. */
+		    (my_acf->agl < INHIBIT_INC_DESC_RA &&
+		    ra->info->msg == RA_MSG_DES_MORE) ||
+		    /* 3) Inhibit all DESCEND RAs below 1100ft AGL. */
+		    (my_acf->agl < INHIBIT_INC_DESC_RA &&
+		    (ra->info->msg == RA_MSG_DES ||
+		    ra->info->msg == RA_MSG_DES_CROSS ||
+		    ra->info->msg == RA_MSG_DES_MORE ||
+		    ra->info->msg == RA_MSG_DES_NOW)) ||
+		    /*
+		     * 4) Pick an RA that makes sense from a sequence POV. We
+		     *    want to prevent a CLB/DES MORE RA from reducing to a
+		     *    regular CLB or CROSS CLB RA. In those cases, we want
+		     *    to either LEVEL OFF or perform a sense reversal.
+		     */
+		    (prev_ra->info->msg == RA_MSG_CLB_MORE &&
 		    (ra->info->msg == RA_MSG_CLB ||
 		    ra->info->msg == RA_MSG_CLB_CROSS)) ||
 		    (prev_ra->info->msg == RA_MSG_DES_MORE &&
 		    (ra->info->msg == RA_MSG_DES ||
 		    ra->info->msg == RA_MSG_DES_CROSS))) {
-			avl_remove(&prio, ra);
 			free(ra);
+			continue;
 		}
+		avl_add(&prio, ra);
 	}
+	ASSERT(avl_numnodes(&prio) != 0);
 
 	avl_remove(&prio, ra);
 	while ((rra = avl_destroy_nodes(&prio, &cookie)) == NULL)
@@ -1145,8 +1173,10 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				/* Filter out pointless annunciations */
 				msg = RA_msg_sequence_check(prev_msg,
 				    ra->info->msg);
-				if ((int)msg != -1)
+				if ((int)msg != -1 &&
+				    my_acf->agl > INHIBIT_AUDIO) {
 					xtcas_play_msg(msg);
+				}
 			} else {
 				free(ra);
 			}
@@ -1167,7 +1197,8 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		    (now - tcas_state.change_t) / 1000000.0);
 		if (tcas_state.adv_state < ADV_STATE_TA &&
 		    now - tcas_state.change_t >= STATE_CHG_DELAY) {
-			xtcas_play_msg(RA_MSG_TFC);
+			if (my_acf->agl > INHIBIT_AUDIO)
+				xtcas_play_msg(RA_MSG_TFC);
 			free(tcas_state.ra);
 			tcas_state.ra = NULL;
 			tcas_state.initial_ra_vs = NAN;
@@ -1178,8 +1209,10 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		dbg_log(tcas, 1, "resolve_CPAs: NONE  adv_state:%d  "
 		    "elapsed:%.0f", tcas_state.adv_state,
 		    (now - tcas_state.change_t) / 1000000.0);
-		if (tcas_state.adv_state == ADV_STATE_RA)
+		if (tcas_state.adv_state == ADV_STATE_RA &&
+		    my_acf->agl > INHIBIT_AUDIO) {
 			xtcas_play_msg(RA_MSG_CLEAR);
+		}
 		free(tcas_state.ra);
 		tcas_state.ra = NULL;
 		tcas_state.initial_ra_vs = NAN;
@@ -1283,7 +1316,7 @@ xtcas_run(void)
 
 	mutex_enter(&acf_lock);
 	update_my_position(t);
-	update_bogie_positions(t, GEO3_TO_GEO2(my_acf_glob.cur_pos));
+	update_bogie_positions(t, my_acf_glob.cur_pos, my_acf_glob.agl);
 
 	if (!my_acf_glob.trend_data_ready) {
 		mutex_exit(&acf_lock);
