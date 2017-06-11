@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <stdio.h>
+#include <math.h>
 
 #include "types.h"
 
@@ -181,6 +182,18 @@ char *mkpathname_v(const char *comp, va_list ap);
  * return x rounded up to the nearest power-of-2.
  */
 #define	P2ROUNDUP(x)	(-(-(x) & -(1 << highbit64(x))))
+/* Round `x' to the nearest multiple of `y' */
+static inline double
+roundmul(double x, double y)
+{
+	return (round(x / y) * y);
+}
+/* Round `x' DOWN to the nearest multiple of `y' */
+static inline double
+floormul(double x, double y)
+{
+	return (floor(x / y) * y);
+}
 #if	!defined(MIN) && !defined(MAX) && !defined(AVG)
 #define	MIN(x, y)	((x) < (y) ? (x) : (y))
 #define	MAX(x, y)	((x) > (y) ? (x) : (y))
