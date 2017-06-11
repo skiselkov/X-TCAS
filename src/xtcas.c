@@ -453,17 +453,24 @@ update_bogie_positions(double t, geo_pos2_t my_pos)
 	free(pos);
 }
 
+/*
+ * Copies all of the global aircraft position info (our aircraft and other
+ * aircraft) to create a thread-local copy. `my_acf_copy' will be populated
+ * with our aircraft's position info, while `other_acf_copy' will be
+ * populated with the state of all other aircraft. Neither may be NULL.
+ */
 static void
 copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
 {
+	ASSERT(my_acf_copy != NULL);
+	ASSERT(other_acf_copy != NULL);
+
 	avl_create(other_acf_copy, acf_compar, sizeof (tcas_acf_t),
 	    offsetof(tcas_acf_t, node));
 
 	mutex_enter(&acf_lock);
 
-	if (my_acf_copy) {
-		memcpy(my_acf_copy, &my_acf_glob, sizeof (my_acf_glob));
-	}
+	memcpy(my_acf_copy, &my_acf_glob, sizeof (*my_acf_copy));
 
 	for (tcas_acf_t *acf = avl_first(&other_acf_glob); acf != NULL;
 	    acf = AVL_NEXT(&other_acf_glob, acf)) {
@@ -479,13 +486,15 @@ static void
 destroy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
 {
 	void *cookie = NULL;
-	tcas_acf_t *a;
+	tcas_acf_t *acf;
 
 	if (my_acf_copy != NULL)
 		free(my_acf_copy);
 
-	while ((a = avl_destroy_nodes(other_acf_copy, &cookie)) != NULL)
-		free(a);
+	while ((acf = avl_destroy_nodes(other_acf_copy, &cookie)) != NULL) {
+		ASSERT(acf->cpa == NULL);
+		free(acf);
+	}
 	avl_destroy(other_acf_copy);
 }
 
