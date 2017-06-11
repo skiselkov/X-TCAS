@@ -359,6 +359,8 @@ static thread_t worker_thr;
 static mutex_t worker_lock;
 static bool_t worker_shutdown = B_FALSE;
 
+static const sim_intf_ops_t *ops = NULL;
+
 static int
 acf_compar(const void *a, const void *b)
 {
@@ -375,7 +377,7 @@ acf_compar(const void *a, const void *b)
 static void
 update_my_position(double t)
 {
-	xtcas_get_my_acf_pos(&my_acf_glob.cur_pos, &my_acf_glob.agl);
+	ops->get_my_acf_pos(&my_acf_glob.cur_pos, &my_acf_glob.agl);
 	my_acf_glob.cur_pos_3d = VECT3(0, 0, my_acf_glob.cur_pos.elev);
 	xtcas_obj_pos_update(&my_acf_glob.pos_upd, t, my_acf_glob.cur_pos,
 	    my_acf_glob.agl);
@@ -394,7 +396,7 @@ update_bogie_positions(double t, geo_pos2_t my_pos)
 	size_t count;
 	fpp_t fpp = stereo_fpp_init(my_pos, 0, &wgs84, B_FALSE);
 
-	xtcas_get_acf_pos(&pos, &count);
+	ops->get_oth_acf_pos(&pos, &count);
 
 	/* walk the tree and mark all acf as out-of-date */
 	for (tcas_acf_t *acf = avl_first(&other_acf_glob); acf != NULL;
@@ -1115,7 +1117,7 @@ main_loop(void *ignored)
 void
 xtcas_run(void)
 {
-	double t = xtcas_get_time();
+	double t = ops->get_time();
 
 	ASSERT(inited);
 
@@ -1135,7 +1137,7 @@ xtcas_run(void)
 }
 
 void
-xtcas_init(void)
+xtcas_init(const sim_intf_ops_t *intf_ops)
 {
 	memset(&my_acf_glob, 0, sizeof (my_acf_glob));
 	avl_create(&other_acf_glob, acf_compar,
@@ -1148,6 +1150,8 @@ xtcas_init(void)
 
 	memset(&tcas_state, 0, sizeof (tcas_state));
 	tcas_state.initial_ra_vs = NAN;
+
+	ops = intf_ops;
 
 	inited = B_TRUE;
 }

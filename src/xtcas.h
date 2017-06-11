@@ -19,12 +19,14 @@
 #ifndef	_XTCAS_H_
 #define	_XTCAS_H_
 
+#include "sim_intf.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void xtcas_run(void);
-void xtcas_init(void);
+void xtcas_init(const sim_intf_ops_t *intf_ops);
 void xtcas_fini(void);
 
 #ifdef __cplusplus

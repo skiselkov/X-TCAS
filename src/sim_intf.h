@@ -15,43 +15,35 @@
  * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
-#ifndef	_SND_SYS_H_
-#define	_SND_SYS_H_
+#ifndef	_SIM_INTF_H_
+#define	_SIM_INTF_H_
 
-#include <stdlib.h>
-
-#include "types.h"
-#include "xtcas.h"
+#include "avl.h"
+#include "geom.h"
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
-typedef enum {
-	RA_MSG_CLB,
-	RA_MSG_CLB_CROSS,
-	RA_MSG_CLB_MORE,
-	RA_MSG_CLB_NOW,
-	RA_MSG_CLEAR,
-	RA_MSG_DES,
-	RA_MSG_DES_CROSS,
-	RA_MSG_DES_MORE,
-	RA_MSG_DES_NOW,
-	RA_MSG_MONITOR_VS,
-	RA_MSG_MAINT_VS,
-	RA_MSG_MAINT_VS_CROSS,
-	RA_MSG_LEVEL_OFF,
-	RA_MSG_TFC,
-	RA_NUM_MSGS
-} tcas_RA_msg_t;
+typedef struct {
+	void		*acf_id;
+	geo_pos3_t	pos;
+	avl_node_t	tree_node;
+} acf_pos_t;
 
-void xtcas_play_msg(tcas_RA_msg_t msg);
+typedef double (*get_time_t)(void);
+typedef void (*get_my_acf_pos_t)(geo_pos3_t *pos, double *alt_agl);
+typedef void (*get_oth_acf_pos_t)(acf_pos_t **pos_p, size_t *num);
+typedef bool_t (*sound_on_t)(void);
 
-bool_t xtcas_snd_sys_init(const char *plugindir, sound_on_t snd_op);
-void xtcas_snd_sys_fini(void);
+typedef struct {
+	get_time_t		get_time;
+	get_my_acf_pos_t	get_my_acf_pos;
+	get_oth_acf_pos_t	get_oth_acf_pos;
+} sim_intf_ops_t;
 
 #ifdef	__cplusplus
 }
 #endif
 
-#endif	/* _SND_SYS_H_ */
+#endif	/* _SIM_INTF_H_ */

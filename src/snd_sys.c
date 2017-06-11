@@ -53,6 +53,7 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 static bool_t inited = B_FALSE;
 static bool_t view_is_ext = B_TRUE;
 static tcas_RA_msg_t cur_msg = -1;
+static sound_on_t sound_on = NULL;
 
 static void
 set_sound_on(bool_t flag)
@@ -87,10 +88,10 @@ snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 	 * Make sure our messages are only audible when we're inside
 	 * the cockpit and AC power is on.
 	 */
-	if (view_is_ext && !xtcas_view_is_external()) {
+	if (view_is_ext && !sound_on()) {
 		set_sound_on(B_TRUE);
 		view_is_ext = B_FALSE;
-	} else if (!view_is_ext && xtcas_view_is_external()) {
+	} else if (!view_is_ext && sound_on()) {
 		set_sound_on(B_FALSE);
 		view_is_ext = B_TRUE;
 	}
@@ -101,7 +102,7 @@ snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 }
 
 bool_t
-xtcas_snd_sys_init(const char *plugindir)
+xtcas_snd_sys_init(const char *plugindir, sound_on_t snd_op)
 {
 	dbg_log(snd, 1, "snd_sys_init");
 
@@ -126,6 +127,7 @@ xtcas_snd_sys_init(const char *plugindir)
 		free(pathname);
 	}
 
+	sound_on = snd_op;
 	XPLMRegisterFlightLoopCallback(snd_sched_cb, -1.0, NULL);
 
 	inited = B_TRUE;

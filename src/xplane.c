@@ -69,6 +69,17 @@ static double last_pos_collected = 0;
 
 static char plugindir[512] = { 0 };
 
+static double xp_get_time(void);
+static void xp_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl);
+static void xp_get_oth_acf_pos(acf_pos_t **pos_p, size_t *num);
+static bool_t xp_view_is_external(void);
+
+static sim_intf_ops_t xp_intf_ops = {
+	.get_time = xp_get_time,
+	.get_my_acf_pos = xp_get_my_acf_pos,
+	.get_oth_acf_pos = xp_get_oth_acf_pos
+};
+
 static int
 acf_pos_compar(const void *a, const void *b)
 {
@@ -174,7 +185,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	double now;
 
 	/* grab updates only at a set interval */
-	now = xtcas_get_time();
+	now = xp_get_time();
 	if (last_pos_collected + POS_UPDATE_INTVAL > now)
 		return (1);
 	last_pos_collected = now;
@@ -234,15 +245,15 @@ floop_cb(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop,
 	return (FLOOP_INTVAL);
 }
 
-double
-xtcas_get_time(void)
+static double
+xp_get_time(void)
 {
 	ASSERT(intf_inited);
 	return (XPLMGetDataf(time_dr));
 }
 
-void
-xtcas_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
+static void
+xp_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
 {
 	ASSERT(intf_inited);
 	pos->lat = XPLMGetDatad(lat_dr);
@@ -251,8 +262,8 @@ xtcas_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
 	*alt_agl = XPLMGetDataf(rad_alt_dr);
 }
 
-void
-xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num)
+static void
+xp_get_oth_acf_pos(acf_pos_t **pos_p, size_t *num)
 {
 	size_t i;
 	acf_pos_t *pos;
@@ -268,8 +279,8 @@ xtcas_get_acf_pos(acf_pos_t **pos_p, size_t *num)
 	mutex_exit(&acf_pos_lock);
 }
 
-bool_t
-xtcas_view_is_external(void)
+static bool_t
+xp_view_is_external(void)
 {
 	return (B_FALSE);
 }
@@ -283,7 +294,7 @@ XPluginStart(char *name, char *sig, char *desc)
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
 	sim_intf_init();
-	if (!xtcas_snd_sys_init(plugindir))
+	if (!xtcas_snd_sys_init(plugindir, xp_view_is_external))
 		return (0);
 
 	return (1);
@@ -299,7 +310,7 @@ XPluginStop(void)
 PLUGIN_API void
 XPluginEnable(void)
 {
-	xtcas_init();
+	xtcas_init(&xp_intf_ops);
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel,
 	    1, NULL);
