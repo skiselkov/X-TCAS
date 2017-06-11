@@ -16,17 +16,9 @@
  * Copyright 2016 Saso Kiselkov. All rights reserved.
  */
 
-#define	PREDICTION_DEBUG	0
-
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
-
-#if	PREDICTION_DEBUG
-#include "XPLMDisplay.h"
-#include "XPLMGraphics.h"
-#include "XPLMScenery.h"
-#endif	/* PREDICTION_DEBUG */
 
 #include "assert.h"
 #include "avl.h"
@@ -366,10 +358,6 @@ static condvar_t worker_cv;
 static thread_t worker_thr;
 static mutex_t worker_lock;
 static bool_t worker_shutdown = B_FALSE;
-
-#if	PREDICTION_DEBUG
-static XPLMObjectRef prediction_object = NULL;
-#endif	/* PREDICTION_DEBUG */
 
 static int
 acf_compar(const void *a, const void *b)
@@ -1124,49 +1112,6 @@ main_loop(void *ignored)
 	mutex_exit(&worker_lock);
 }
 
-#if	PREDICTION_DEBUG
-
-#define	SET_DRAW_INFO(i, v) \
-	do { \
-		geo_pos2_t p = fpp2geo(VECT2((v)->x, (v)->y), &fpp); \
-		vect3_t loc; \
-		XPLMWorldToLocal(p.lat, p.lon, (v)->z, &loc.x, &loc.y, &loc.z);\
-		*(i) = (XPLMDrawInfo_t){ \
-		    .structSize = sizeof (XPLMDrawInfo_t), \
-		    .x = loc.x, .y = loc.y, .z = loc.z, \
-		    .pitch = 0, .heading = (v)->trk, .roll = 0 \
-		}; \
-	} while (0)
-
-static int
-draw_prediction_objects(XPLMDrawingPhase phase, int before, void *ref)
-{
-	UNUSED(phase);
-	UNUSED(before);
-	UNUSED(ref);
-
-//	XPLMDrawInfo_t *draw_info;
-	fpp_t fpp;
-
-	ASSERT(prediction_object != NULL);
-
-	mutex_enter(&acf_lock);
-	fpp = stereo_fpp_init(GEO3_TO_GEO2(&my_acf_glob.cur_pos), 0, &wgs84,
-	    B_TRUE);
-	draw_info = calloc(my_acf_glob.num_extr_pos, sizeof (*draw_info));
-	for (unsigned i = 0; i < my_acf_glob.num_extr_pos; i++)
-		SET_DRAW_INFO(&draw_info[i], &my_acf_glob.extr_pos[i]);
-	if (my_acf_glob.num_extr_pos != 0)
-		XPLMDrawObjects(prediction_object, my_acf_glob.num_extr_pos,
-		    draw_info, 1, 1);
-	free(draw_info);
-	mutex_exit(&acf_lock);
-
-	return (1);
-}
-
-#endif	/* PREDICTION_DEBUG */
-
 void
 xtcas_run(void)
 {
@@ -1204,27 +1149,12 @@ xtcas_init(void)
 	memset(&tcas_state, 0, sizeof (tcas_state));
 	tcas_state.initial_ra_vs = NAN;
 
-#if	PREDICTION_DEBUG
-	prediction_object = XPLMLoadObject("Resources/default scenery/"
-	    "airport scenery/Aircraft/General_Aviation/Cessna_172.obj");
-	VERIFY(prediction_object != NULL);
-	XPLMRegisterDrawCallback(draw_prediction_objects,
-	    xplm_Phase_Objects, 0, NULL);
-#endif	/* PREDICTION_DEBUG */
-
 	inited = B_TRUE;
 }
 
 void
 xtcas_fini(void)
 {
-#if	PREDICTION_DEBUG
-	XPLMUnloadObject(prediction_object);
-	prediction_object = NULL;
-	XPLMUnregisterDrawCallback(draw_prediction_objects,
-	    xplm_Phase_Objects, 0, NULL);
-#endif	/* PREDICTION_DEBUG */
-
 	mutex_enter(&worker_lock);
 	worker_shutdown = B_TRUE;
 	cv_broadcast(&worker_cv);
