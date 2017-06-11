@@ -31,6 +31,7 @@ typedef struct {
 	int	snd;
 	int	wav;
 	int	tcas;
+	int	test;
 	int	xplane;
 } dbg_info_t;
 

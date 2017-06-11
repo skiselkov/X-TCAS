@@ -16,11 +16,20 @@
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
-SET(SRC SL.c avl.c geom.c helpers.c list.c log.c math.c pos.c xplane.c
+SET(SRC SL.c avl.c geom.c helpers.c list.c log.c math.c pos.c
     xtcas.c thread.c time.c wav.c snd_sys.c riff.c)
 SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h log.h list.h list_impl.h
-    math.h pos.h types.h xplane.h xtcas.h time.h thread.h wav.h snd_sys.h
+    math.h pos.h types.h xtcas.h time.h thread.h wav.h snd_sys.h
     riff.h)
+
+if("${TEST_STANDALONE_BUILD}" EQUAL "1")
+	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DTEST_STANDALONE_BUILD")
+	LIST(APPEND SRC test.c)
+	LIST(APPEND HDR test.h)
+else()
+	LIST(APPEND SRC xplane.c)
+	LIST(APPEND HDR xplane.h)
+endif()
 
 SET(ALL_SRC ${SRC} ${HDR})
 LIST(SORT ALL_SRC)
@@ -28,9 +37,17 @@ LIST(SORT ALL_SRC)
 if(APPLE)
 	add_executable(xtcas ${ALL_SRC})
 elseif(UNIX)
-	add_library(xtcas SHARED ${ALL_SRC})
+	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
+		add_executable(xtcas ${ALL_SRC})
+	else()
+		add_library(xtcas SHARED ${ALL_SRC})
+	endif()
 elseif(WIN32)
-	add_library(xtcas MODULE ${ALL_SRC})
+	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
+		add_executable(xtcas ${ALL_SRC})
+	else()
+		add_library(xtcas MODULE ${ALL_SRC})
+	endif()
 	SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MD")
 	SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} /MD")
 	SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MDd")
@@ -47,9 +64,17 @@ endif()
 
 #libraries
 if(UNIX)
-	include_directories(xtcas PUBLIC "../SDK/CHeaders/XPLM/"
-	    "../SDK/CHeaders/Widgets/" "../SDK/CHeaders/Wrappers/"
-	    "../OpenAL/include")
+	include_directories(xtcas PUBLIC "../OpenAL/include")
+	if(NOT "${TEST_STANDALONE_BUILD}" EQUAL "1")
+		include_directories(xtcas PUBLIC "../SDK/CHeaders/XPLM"
+		    "../SDK/CHeaders/Widgets" "../SDK/CHeaders/Wrappers")
+	endif()
+else()
+	include_directories(xtcas PUBLIC "..\\OpenAL\\include")
+	if(NOT "${TEST_STANDALONE_BUILD}" EQUAL "1")
+		include_directories(xtcas PUBLIC "..\\SDK\\CHeaders\\XPLM"
+		    "..\\SDK\\CHeaders\\Widgets" "..\\SDK\\CHeaders\\Wrappers")
+	endif()
 endif(UNIX)
 if(APPLE)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -Wno-deprecated")
@@ -77,8 +102,14 @@ if(APPLE)
 	FIND_LIBRARY(XPLM_LIBRARY XPLM ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(XPWIDGETS_LIBRARY XPWidgets ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(OPENAL_LIBRARY OpenAL)
-	target_link_libraries(xtcas ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY}
-	    ${OPENAL_LIBRARY})
+	FIND_LIBRARY(CURSES_LIBRARY ncurses)
+	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
+		target_link_libraries(xtcas ${OPENAL_LIBRARY}
+		    ${CURSES_LIBRARY})
+	else()
+		target_link_libraries(xtcas ${OPENAL_LIBRARY}
+		    ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY})
+	endif()
 elseif(UNIX)
 	INCLUDE(FindPkgConfig)
 	pkg_check_modules(UDEV REQUIRED libudev)
@@ -92,29 +123,37 @@ elseif(WIN32)
 	    "..\\SDK\\Libraries\\Win\\")
 	FIND_LIBRARY(XPWIDGETS_LIBRARY XPWidgets_64
 	    "..\\SDK\\Libraries\\Win\\")
-	target_link_libraries(xtcas ${XPLM_LIBRARY}
-	    ${XPWIDGETS_LIBRARY})
+	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
+		target_link_libraries(xtcas ${OPENAL_LIBRARY})
+	else()
+		target_link_libraries(xtcas ${OPENAL_LIBRARY}
+		    ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY})
+	endif()
 endif()
 
 SET_TARGET_PROPERTIES(xtcas PROPERTIES PREFIX "")
 SET_TARGET_PROPERTIES(xtcas PROPERTIES SUFFIX "")
-if(APPLE)
-	set(OUTPUT_FILENAME "mac.xpl")
-	SET_TARGET_PROPERTIES(xtcas PROPERTIES LINK_FLAGS
-	    "${CMAKE_SHARED_LINKER_FLAGS} -fPIC -fvisibility=hidden \
-	    -bundle -framework OpenGL -framework Cocoa")
-elseif(UNIX)
-	set(OUTPUT_FILENAME "lin.xpl")
-	SET_TARGET_PROPERTIES(xtcas PROPERTIES LINK_FLAGS
-	    "${CMAKE_SHARED_LINKER_FLAGS} -rdynamic -nodefaultlibs \
-	    -undefined_warning -fPIC -fvisibility=hidden")
-elseif(WIN32)
-	set(OUTPUT_FILENAME "win.xpl")
+
+if("${TEST_STANDALONE_BUILD}" EQUAL "1")
+	set(OUTPUT_FILENAME "xtcas")
+else()
+	if(APPLE)
+		set(OUTPUT_FILENAME "mac.xpl")
+		SET_TARGET_PROPERTIES(xtcas PROPERTIES LINK_FLAGS
+		    "${CMAKE_SHARED_LINKER_FLAGS} -fPIC -fvisibility=hidden \
+		    -bundle")
+	elseif(UNIX)
+		set(OUTPUT_FILENAME "lin.xpl")
+		SET_TARGET_PROPERTIES(xtcas PROPERTIES LINK_FLAGS
+		    "${CMAKE_SHARED_LINKER_FLAGS} -rdynamic -nodefaultlibs \
+		    -undefined_warning -fPIC -fvisibility=hidden")
+	elseif(WIN32)
+		set(OUTPUT_FILENAME "win.xpl")
+	endif()
 endif()
 
 set_target_properties(xtcas PROPERTIES RUNTIME_OUTPUT_DIRECTORY
     "${CMAKE_SOURCE_DIR}/bin" )
 set_target_properties(xtcas PROPERTIES LIBRARY_OUTPUT_DIRECTORY
     "${CMAKE_SOURCE_DIR}/bin" )
-set_target_properties(xtcas PROPERTIES OUTPUT_NAME
-    "${OUTPUT_FILENAME}")
+set_target_properties(xtcas PROPERTIES OUTPUT_NAME "${OUTPUT_FILENAME}")

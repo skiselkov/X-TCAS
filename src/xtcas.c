@@ -31,7 +31,6 @@
 #include "SL.h"
 #include "thread.h"
 #include "time.h"
-#include "xplane.h"
 
 #include "xtcas.h"
 

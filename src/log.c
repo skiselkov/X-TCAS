@@ -28,7 +28,9 @@
 #include <execinfo.h>   /* used for stack tracing */
 #endif	/* !IBM */
 
+#ifndef	TEST_STANDALONE_BUILD
 #include "XPLMUtilities.h"
+#endif
 
 #include "assert.h"
 #include "helpers.h"
@@ -39,11 +41,7 @@
 #define	PREFIX_FMT	"%s %s[%s:%d]: ", timedate, PREFIX, filename, line
 
 dbg_info_t xtcas_dbg = {
-	.all = 100,
-	.snd = 100,
-	.wav = 100,
-	.tcas = 100,
-	.xplane = 100
+	.all = 0, .snd = 0, .wav = 0, .tcas = 0, .xplane = 0, .test = 0
 };
 
 void
@@ -79,7 +77,9 @@ xtcas_log_impl_v(const char *filename, int line, const char *fmt, va_list ap)
 	(void) vsnprintf(&buf[prefix_len], len + 1, fmt, ap);
 	(void) sprintf(&buf[strlen(buf)], "\n");
 
+#ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(buf);
+#endif
 	puts(buf);
 
 	free(buf);
@@ -173,7 +173,9 @@ xtcas_log_backtrace(void)
 		}
 	}
 
+#ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(backtrace_buf);
+#endif
 	fputs(backtrace_buf, stderr);
 
 #else	/* !IBM */
@@ -195,7 +197,9 @@ xtcas_log_backtrace(void)
 	for (i = 1, j = BACKTRACE_STRLEN; i < sz; i++)
 		j += sprintf(&msg[j], "%s\n", fnames[i]);
 
+#ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(msg);
+#endif
 	fputs(msg, stderr);
 
 	free(msg);

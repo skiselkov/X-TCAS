@@ -288,14 +288,20 @@ xp_view_is_external(void)
 PLUGIN_API int
 XPluginStart(char *name, char *sig, char *desc)
 {
+	char *snd_dir;
+
 	XPLMGetPluginInfo(XPLMGetMyID(), NULL, plugindir, NULL, NULL);
 
 	strcpy(name, XTCAS_PLUGIN_NAME);
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
 	sim_intf_init();
-	if (!xtcas_snd_sys_init(plugindir, xp_view_is_external))
+	snd_dir = mkpathname(plugindir, "data", "male1", NULL);
+	if (!xtcas_snd_sys_init(plugindir, xp_view_is_external)) {
+		free(snd_dir);
 		return (0);
+	}
+	free(snd_dir);
 
 	return (1);
 }

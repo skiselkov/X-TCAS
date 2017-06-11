@@ -52,16 +52,16 @@ typedef struct wav_s {
 	ALuint		alsrc;
 } wav_t;
 
-void openal_set_shared_ctx(bool_t flag);
-bool_t openal_init();
-void openal_fini();
+void xtcas_openal_set_shared_ctx(bool_t flag);
+bool_t xtcas_openal_init();
+void xtcas_openal_fini();
 
-wav_t *wav_load(const char *filename, const char *descr_name);
-void wav_free(wav_t *wav);
+wav_t *xtcas_wav_load(const char *filename, const char *descr_name);
+void xtcas_wav_free(wav_t *wav);
 
-void wav_set_gain(wav_t *wav, float gain);
-bool_t wav_play(wav_t *wav);
-void wav_stop(wav_t *wav);
+void xtcas_wav_set_gain(wav_t *wav, float gain);
+bool_t xtcas_wav_play(wav_t *wav);
+void xtcas_wav_stop(wav_t *wav);
 
 #ifdef	__cplusplus
 }

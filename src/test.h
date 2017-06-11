@@ -11,47 +11,22 @@
  * http://www.illumos.org/license/CDDL.
  *
  * CDDL HEADER END
- *
+*/
+/*
  * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
-#ifndef	_SND_SYS_H_
-#define	_SND_SYS_H_
-
-#include <stdlib.h>
-
-#include "types.h"
-#include "xtcas.h"
+#ifndef	_XTCAS_TEST_H_
+#define	_XTCAS_TEST_H_
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
-typedef enum {
-	RA_MSG_CLB,
-	RA_MSG_CLB_CROSS,
-	RA_MSG_CLB_MORE,
-	RA_MSG_CLB_NOW,
-	RA_MSG_CLEAR,
-	RA_MSG_DES,
-	RA_MSG_DES_CROSS,
-	RA_MSG_DES_MORE,
-	RA_MSG_DES_NOW,
-	RA_MSG_MONITOR_VS,
-	RA_MSG_MAINT_VS,
-	RA_MSG_MAINT_VS_CROSS,
-	RA_MSG_LEVEL_OFF,
-	RA_MSG_TFC,
-	RA_NUM_MSGS
-} tcas_RA_msg_t;
 
-void xtcas_play_msg(tcas_RA_msg_t msg);
-
-bool_t xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op);
-void xtcas_snd_sys_fini(void);
 
 #ifdef	__cplusplus
 }
 #endif
 
-#endif	/* _SND_SYS_H_ */
+#endif	/* _XTCAS_TEST_H_ */

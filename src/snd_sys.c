@@ -18,13 +18,13 @@
 #include <stddef.h>
 #include <string.h>
 
+#ifndef	TEST_STANDALONE_BUILD
 #include <XPLMProcessing.h>
-#include <XPLMUtilities.h>
+#endif
 
 #include "assert.h"
 #include "list.h"
 #include "wav.h"
-#include "xplane.h"
 
 #include "snd_sys.h"
 
@@ -59,13 +59,18 @@ static void
 set_sound_on(bool_t flag)
 {
 	for (int i = 0; i < RA_NUM_MSGS; i++)
-		wav_set_gain(voice_msgs[i].wav, flag ? 1.0 : 0);
+		xtcas_wav_set_gain(voice_msgs[i].wav, flag ? 1.0 : 0);
 }
 
 void
 xtcas_play_msg(tcas_RA_msg_t msg)
 {
+	ASSERT3U(msg, <, RA_NUM_MSGS);
+#ifndef	TEST_STANDALONE_BUILD
 	cur_msg = msg;
+#else	/* !TEST_STANDALONE_BUILD */
+	(void) xtcas_wav_play(voice_msgs[msg].wav);
+#endif	/* !TEST_STANDALONE_BUILD */
 }
 
 static float
@@ -96,39 +101,43 @@ snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 		view_is_ext = B_TRUE;
 	}
 
-	(void) wav_play(voice_msgs[msg].wav);
+	(void) xtcas_wav_play(voice_msgs[msg].wav);
 
 	return (-1.0);
 }
 
 bool_t
-xtcas_snd_sys_init(const char *plugindir, sound_on_t snd_op)
+xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op)
 {
 	dbg_log(snd, 1, "snd_sys_init");
 
 	ASSERT(!inited);
 
 	/* no WAV/OpenAL calls before this */
-	if (!openal_init())
+	if (!xtcas_openal_init())
 		return (B_FALSE);
 
 	for (tcas_RA_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		char *pathname;
 
 		ASSERT3P(voice_msgs[msg].wav, ==, NULL);
-		pathname = mkpathname(plugindir, "data", "msgs",
-		    voice_msgs[msg].file, NULL);
-		voice_msgs[msg].wav = wav_load(pathname, voice_msgs[msg].file);
+		pathname = mkpathname(snd_dir, voice_msgs[msg].file, NULL);
+		voice_msgs[msg].wav = xtcas_wav_load(pathname,
+		    voice_msgs[msg].file);
 		if (voice_msgs[msg].wav == NULL) {
 			free(pathname);
 			goto errout;
 		}
-		wav_set_gain(voice_msgs[msg].wav, 1.0);
+		xtcas_wav_set_gain(voice_msgs[msg].wav, 1.0);
 		free(pathname);
 	}
 
 	sound_on = snd_op;
+#ifndef	TEST_STANDALONE_BUILD
 	XPLMRegisterFlightLoopCallback(snd_sched_cb, -1.0, NULL);
+#else	/* !TEST_STANDALONE_BUILD */
+	(void) snd_sched_cb;
+#endif	/* !TEST_STANDALONE_BUILD */
 
 	inited = B_TRUE;
 
@@ -137,11 +146,11 @@ xtcas_snd_sys_init(const char *plugindir, sound_on_t snd_op)
 errout:
 	for (tcas_RA_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
-			wav_free(voice_msgs[msg].wav);
+			xtcas_wav_free(voice_msgs[msg].wav);
 			voice_msgs[msg].wav = NULL;
 		}
 	}
-	openal_fini();
+	xtcas_openal_fini();
 
 	return (B_FALSE);
 }
@@ -154,17 +163,19 @@ xtcas_snd_sys_fini(void)
 	if (!inited)
 		return;
 
+#ifndef	TEST_STANDALONE_BUILD
 	XPLMUnregisterFlightLoopCallback(snd_sched_cb, NULL);
+#endif
 
 	for (tcas_RA_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
-			wav_free(voice_msgs[msg].wav);
+			xtcas_wav_free(voice_msgs[msg].wav);
 			voice_msgs[msg].wav = NULL;
 		}
 	}
 
 	/* no more OpenAL/WAV calls after this */
-	openal_fini();
+	xtcas_openal_fini();
 
 	inited = B_FALSE;
 }

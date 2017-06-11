@@ -44,7 +44,11 @@
 
 static ALCdevice *old_dev = NULL, *my_dev = NULL;
 static ALCcontext *old_ctx = NULL, *my_ctx = NULL;
+#ifdef	TEST_STANDALONE_BUILD
+static bool_t use_shared = B_TRUE;
+#else	/* !TEST_STANDALONE_BUILD */
 static bool_t use_shared = B_FALSE;
+#endif	/* !TEST_STANDALONE_BUILD */
 static bool_t ctx_saved = B_FALSE;
 static bool_t openal_inited = B_FALSE;
 
@@ -111,25 +115,25 @@ ctx_restore(void)
 }
 
 void
-openal_set_shared_ctx(bool_t flag)
+xtcas_openal_set_shared_ctx(bool_t flag)
 {
 	ASSERT(!openal_inited);
-	dbg_log(wav, 1, "openal_set_shared_ctx = %d", flag);
+	dbg_log(wav, 1, "xtcas_openal_set_shared_ctx = %d", flag);
 	use_shared = flag;
 }
 
 bool_t
-openal_init(void)
+xtcas_openal_init(void)
 {
 
-	dbg_log(wav, 1, "openal_init");
+	dbg_log(wav, 1, "xtcas_openal_init");
 
 	ASSERT(!openal_inited);
 
 	if (!ctx_save())
 		return (B_FALSE);
 
-	if (!use_shared) {
+	if (!use_shared || alcGetCurrentContext() == NULL) {
 		ALuint err;
 
 		my_dev = alcOpenDevice(NULL);
@@ -148,6 +152,18 @@ openal_init(void)
 			return (B_FALSE);
 		}
 		VERIFY(my_ctx != NULL);
+		/* No current context, install our own */
+		if (alcGetCurrentContext() == NULL) {
+			ASSERT(use_shared);
+			alcMakeContextCurrent(my_ctx);
+			if ((err = alcGetError(my_dev)) != ALC_NO_ERROR) {
+				dbg_log(wav, 0, "Error installing my audio "
+				    "context (0x%x)", err);
+				alcDestroyContext(my_ctx);
+				alcCloseDevice(my_dev);
+				return (B_FALSE);
+			}
+		}
 	}
 
 	if (!ctx_restore())
@@ -159,9 +175,9 @@ openal_init(void)
 }
 
 void
-openal_fini()
+xtcas_openal_fini()
 {
-	dbg_log(wav, 1, "openal_fini");
+	dbg_log(wav, 1, "xtcas_openal_fini");
 
 	if (!openal_inited)
 		return;
@@ -181,7 +197,7 @@ openal_fini()
  * stereo raw PCM (uncompressed) WAV files.
  */
 wav_t *
-wav_load(const char *filename, const char *descr_name)
+xtcas_wav_load(const char *filename, const char *descr_name)
 {
 	wav_t *wav = NULL;
 	FILE *fp;
@@ -339,22 +355,22 @@ errout:
 		free(dump);
 		riff_free_chunk(riff);
 	}
-	wav_free(wav);
+	xtcas_wav_free(wav);
 	fclose(fp);
 
 	return (NULL);
 }
 
 /*
- * Destroys a WAV file as returned by wav_load().
+ * Destroys a WAV file as returned by xtcas_wav_load().
  */
 void
-wav_free(wav_t *wav)
+xtcas_wav_free(wav_t *wav)
 {
 	if (wav == NULL)
 		return;
 
-	dbg_log(wav, 1, "wav_free %s", wav->name);
+	dbg_log(wav, 1, "xtcas_wav_free %s", wav->name);
 
 	ASSERT(openal_inited);
 
@@ -376,14 +392,14 @@ wav_free(wav_t *wav)
  * (full volume).
  */
 void
-wav_set_gain(wav_t *wav, float gain)
+xtcas_wav_set_gain(wav_t *wav, float gain)
 {
 	ALuint err;
 
 	if (wav == NULL || wav->alsrc == 0)
 		return;
 
-	dbg_log(wav, 1, "wav_set_gain %s %f", wav->name, (double)gain);
+	dbg_log(wav, 1, "xtcas_wav_set_gain %s %f", wav->name, (double)gain);
 
 	ASSERT(openal_inited);
 
@@ -398,18 +414,18 @@ wav_set_gain(wav_t *wav, float gain)
 }
 
 /*
- * Starts playback of a WAV file loaded through wav_load. Playback volume
- * is full (1.0) or the last value set by wav_set_gain.
+ * Starts playback of a WAV file loaded through xtcas_wav_load.
+ * Playback volume is full (1.0) or the last value set by xtcas_wav_set_gain.
  */
 bool_t
-wav_play(wav_t *wav)
+xtcas_wav_play(wav_t *wav)
 {
 	ALuint err;
 
 	if (wav == NULL)
 		return (B_FALSE);
 
-	dbg_log(wav, 1, "wav_play %s", wav->name);
+	dbg_log(wav, 1, "xtcas_wav_play %s", wav->name);
 
 	ASSERT(openal_inited);
 
@@ -429,18 +445,18 @@ wav_play(wav_t *wav)
 }
 
 /*
- * Stops playback of a WAV file started via wav_play and resets the playback
- * position back to the start of the file.
+ * Stops playback of a WAV file started via xtcas_wav_play and
+ * resets the playback position back to the start of the file.
  */
 void
-wav_stop(wav_t *wav)
+xtcas_wav_stop(wav_t *wav)
 {
 	ALuint err;
 
 	if (wav == NULL)
 		return;
 
-	dbg_log(wav, 1, "wav_stop %s", wav->name);
+	dbg_log(wav, 1, "xtcas_wav_stop %s", wav->name);
 
 	if (wav->alsrc == 0)
 		return;
