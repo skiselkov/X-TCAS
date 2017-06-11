@@ -21,7 +21,15 @@
 
 #include <stdlib.h>
 
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
 uint64_t xtcas_microclock();
 #define	microclock	xtcas_microclock
+
+#ifdef	__cplusplus
+}
+#endif
 
 #endif	/* _XTCAS_TIME_H_ */

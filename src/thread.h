@@ -61,7 +61,7 @@ extern "C" {
 bool_t xtcas_cv_timedwait(condvar_t *cond, mutex_t *mtx, uint64_t microtime);
 
 #else	/* !APL && !LIN */
-#error "Missing threading implementation for this platform"
+
 #endif	/* !APL && !LIN */
 
 #ifdef __cplusplus
