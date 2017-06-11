@@ -32,6 +32,7 @@
 #include "geom.h"
 #include "log.h"
 #include "helpers.h"
+#include "snd_sys.h"
 #include "types.h"
 #include "xtcas.h"
 #include "thread.h"
@@ -65,6 +66,8 @@ static XPLMDataRef mp_plane_x_dr[MAX_MP_PLANES],
 static mutex_t acf_pos_lock;
 static avl_tree_t acf_pos_tree;
 static double last_pos_collected = 0;
+
+static char plugindir[512] = { 0 };
 
 static int
 acf_pos_compar(const void *a, const void *b)
@@ -274,10 +277,14 @@ xtcas_view_is_external(void)
 PLUGIN_API int
 XPluginStart(char *name, char *sig, char *desc)
 {
+	XPLMGetPluginInfo(XPLMGetMyID(), NULL, plugindir, NULL, NULL);
+
 	strcpy(name, XTCAS_PLUGIN_NAME);
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
 	sim_intf_init();
+	if (!xtcas_snd_sys_init(plugindir))
+		return (0);
 
 	return (1);
 }
@@ -285,6 +292,7 @@ XPluginStart(char *name, char *sig, char *desc)
 PLUGIN_API void
 XPluginStop(void)
 {
+	xtcas_snd_sys_fini();
 	sim_intf_fini();
 }
 

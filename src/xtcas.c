@@ -917,14 +917,15 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		ASSERT(avl_numnodes(&ra_cpas) != 0);
 
 		ra = CAS_logic(my_acf, tcas_state.ra, &ra_cpas, sl);
+		ASSERT(ra != NULL);
 
-		if (ra != NULL &&
-		    now - tcas_state.change_t >= STATE_CHG_DELAY) {
-			if (tcas_state.ra != NULL)
-				free(tcas_state.ra);
+		if (now - tcas_state.change_t >= STATE_CHG_DELAY) {
+			free(tcas_state.ra);
 			tcas_state.ra = ra;
 			tcas_state.change_t = now;
-			/* TODO: call ra->msg */
+			xtcas_play_msg(ra->info->msg);
+		} else {
+			free(ra);
 		}
 		tcas_state.adv_state = ADV_STATE_RA;
 
@@ -940,14 +941,16 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		 */
 		if (tcas_state.adv_state < ADV_STATE_TA &&
 		    now - tcas_state.change_t >= STATE_CHG_DELAY) {
-			/* TODO: TRAFFIC, TRAFFIC */
+			xtcas_play_msg(RA_MSG_TFC);
+			free(tcas_state.ra);
 			tcas_state.ra = NULL;
 			tcas_state.adv_state = ADV_STATE_TA;
 		}
-	} else if (now - tcas_state.change_t >= STATE_CHG_DELAY) {
-		if (tcas_state.adv_state == ADV_STATE_RA) {
-			/* TODO: CLEAR OF CONFLICT */
-		}
+	} else if (tcas_state.adv_state != ADV_STATE_NONE &&
+	    now - tcas_state.change_t >= STATE_CHG_DELAY) {
+		if (tcas_state.adv_state == ADV_STATE_RA)
+			xtcas_play_msg(RA_MSG_CLEAR);
+		free(tcas_state.ra);
 		tcas_state.ra = NULL;
 		tcas_state.adv_state = ADV_STATE_NONE;
 		tcas_state.change_t = now;

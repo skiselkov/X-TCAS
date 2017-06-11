@@ -62,7 +62,7 @@ set_sound_on(bool_t flag)
 }
 
 void
-play_msg(tcas_RA_msg_t msg)
+xtcas_play_msg(tcas_RA_msg_t msg)
 {
 	cur_msg = msg;
 }
@@ -101,7 +101,7 @@ snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 }
 
 bool_t
-snd_sys_init(const char *plugindir)
+xtcas_snd_sys_init(const char *plugindir)
 {
 	dbg_log(snd, 1, "snd_sys_init");
 
@@ -145,7 +145,7 @@ errout:
 }
 
 void
-snd_sys_fini(void)
+xtcas_snd_sys_fini(void)
 {
 	dbg_log(snd, 1, "snd_sys_fini");
 

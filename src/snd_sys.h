@@ -44,10 +44,10 @@ typedef enum {
 	RA_NUM_MSGS
 } tcas_RA_msg_t;
 
-void play_msg(tcas_RA_msg_t msg);
+void xtcas_play_msg(tcas_RA_msg_t msg);
 
-bool_t snd_sys_init(const char *plugindir);
-void snd_sys_fini(void);
+bool_t xtcas_snd_sys_init(const char *plugindir);
+void xtcas_snd_sys_fini(void);
 
 #ifdef	__cplusplus
 }
