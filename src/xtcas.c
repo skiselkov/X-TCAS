@@ -48,6 +48,9 @@
 #define	SUBSEQ_RA_D_VVEL	(EARTH_G / 3)	/* 1/3 g */
 #define	SUBSEQ_RA_DELAY		2.5		/* seconds */
 
+#define	NORM_VERT_FILTER	FEET2MET(9900)	/* Used for the ABV and BLW */
+#define	SHORT_VERT_FILTER	FEET2MET(2700)	/* vertical filter modes */
+
 #define	OTH_TFC_DIST_THRESH		NM2MET(40)
 #define	PROX_DIST_THRESH		NM2MET(6)
 #define	PROX_ALT_THRESH			FEET2MET(1200)
@@ -706,7 +709,13 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		double t_cpa, dist;
 		cpa_t *cpa;
 
-		if (!acf->trend_data_ready)
+		/*
+		 * Don't compute CPAs for contacts that either:
+		 * 1) Don't have any trend data available yet.
+		 * 2) Fall outside of our maximum vertical filter boundaries.
+		 */
+		if (!acf->trend_data_ready || ABS(acf->cur_pos.elev -
+		    my_acf->cur_pos.elev) > NORM_VERT_FILTER)
 			continue;
 
 		pos_3d = acf->cur_pos_3d;
@@ -761,12 +770,24 @@ destroy_CPAs(avl_tree_t *cpas)
 }
 
 static void
-assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl)
+assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
+    tcas_filter_t filter)
 {
 	double d_h = vect2_abs(vect2_sub(VECT3_TO_VECT2(oacf->cur_pos_3d),
 	    VECT3_TO_VECT2(my_pos_3d)));
 	double d_v = ABS(my_pos_3d.z - oacf->cur_pos_3d.z);
 	cpa_t *cpa = oacf->cpa;
+	double filter_min = my_pos_3d.z, filter_max = my_pos_3d.z;
+	bool_t vert_filter = B_TRUE;
+
+	filter_min -= (filter == TCAS_FILTER_ABV ? SHORT_VERT_FILTER :
+	    NORM_VERT_FILTER);
+	filter_max += (filter == TCAS_FILTER_BLW ? SHORT_VERT_FILTER :
+	    NORM_VERT_FILTER);
+	if (oacf->alt_rptg) {
+		vert_filter = (oacf->cur_pos.elev >= filter_min &&
+		    oacf->cur_pos.elev <= filter_max);
+	}
 
 	if (cpa != NULL) {
 		/*
@@ -775,6 +796,7 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl)
 		 * 2a) its CPA point violates the protected volume AND
 		 *	time to CPA is <= tau_RA
 		 * 2b) its current position violates our protected volume
+		 * The vertical filter is NOT applied to RAs.
 		 */
 		if (oacf->alt_rptg &&
 		    ((cpa->d_h <= sl->dmod_RA && cpa->d_v <= sl->zthr_RA &&
@@ -785,7 +807,7 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl)
 			return;
 		}
 		/*
-		 * TA threat iff:
+		 * TA threat iff (subject to vertical filter being satisfied):
 		 * 1) ALL of the following conditions are true:
 		 *	1a) horiz separation at CPA violates protected volume
 		 *	1b) the aircraft DOESN'T report altitude, OR vert
@@ -797,10 +819,10 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl)
 		 *	    separation NOW violates protected volume
 		 *	2c) time to CPA <= tau_TA
 		 */
-		if ((cpa->d_h <= sl->dmod_TA && (!oacf->alt_rptg ||
-		    cpa->d_v <= sl->zthr_TA) && cpa->d_t <= sl->tau_TA) ||
-		    (d_h <= sl->dmod_TA &&
-		    (!oacf->alt_rptg || d_v <= sl->zthr_TA))) {
+		if (vert_filter && ((cpa->d_h <= sl->dmod_TA &&
+		    (!oacf->alt_rptg || cpa->d_v <= sl->zthr_TA) &&
+		    cpa->d_t <= sl->tau_TA) || (d_h <= sl->dmod_TA &&
+		    (!oacf->alt_rptg || d_v <= sl->zthr_TA)))) {
 			dbg_log(tcas, 1, "bogie %p TA_THREAT", oacf->acf_id);
 			oacf->threat = TA_THREAT;
 			return;
@@ -1111,7 +1133,8 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 	/* Re-assign threat level as necessary. */
 	for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 	    acf = AVL_NEXT(other_acf, acf)) {
-		assign_threat_level(my_acf->cur_pos_3d, acf, sl);
+		assign_threat_level(my_acf->cur_pos_3d, acf, sl,
+		    tcas_state.filter);
 		TA_found |= (acf->threat == TA_THREAT);
 		RA_found |= (acf->threat == RA_THREAT);
 	}
