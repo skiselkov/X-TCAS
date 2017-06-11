@@ -30,6 +30,8 @@ typedef struct {
 	int	all;
 	int	snd;
 	int	wav;
+	int	tcas;
+	int	xplane;
 } dbg_info_t;
 
 extern dbg_info_t xtcas_dbg;

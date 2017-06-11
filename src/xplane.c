@@ -39,8 +39,8 @@
 
 #include "xplane.h"
 
-#define	FLOOP_INTVAL			1.0
-#define	POS_UPDATE_INTVAL		1.0
+#define	FLOOP_INTVAL			0.1
+#define	POS_UPDATE_INTVAL		0.1
 #define	XTCAS_PLUGIN_NAME		"X-TCAS 1.0"
 #define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas.1.0"
 #define	XTCAS_PLUGIN_DESCRIPTION \
@@ -312,8 +312,7 @@ XPluginEnable(void)
 {
 	xtcas_init(&xp_intf_ops);
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
-	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel,
-	    1, NULL);
+	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel, 1, NULL);
 }
 
 PLUGIN_API void

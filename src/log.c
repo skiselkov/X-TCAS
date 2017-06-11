@@ -41,7 +41,9 @@
 dbg_info_t xtcas_dbg = {
 	.all = 100,
 	.snd = 100,
-	.wav = 100
+	.wav = 100,
+	.tcas = 100,
+	.xplane = 100
 };
 
 void

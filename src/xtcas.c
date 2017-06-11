@@ -40,18 +40,24 @@
 #define	LEVEL_VVEL_THRESH	FPM2MPS(300)
 #define	NUM_RA_INFOS		24
 
-#define	WORKER_LOOP_INTVAL	1000000		/* us */
-
+#define	WORKER_LOOP_INTVAL	SEC2USEC(1)	/* microseconds */
+#define	STATE_CHG_DELAY		SEC2USEC(4)	/* microseconds */
 #define	EARTH_G			9.81		/* m.s^-2 */
 #define	INITIAL_RA_D_VVEL	(EARTH_G / 4)	/* 1/4 g */
-#define	INITIAL_RA_DELAY	5.0		/* secs */
+#define	INITIAL_RA_DELAY	5.0		/* seconds */
 #define	SUBSEQ_RA_D_VVEL	(EARTH_G / 3)	/* 1/3 g */
-#define	SUBSEQ_RA_DELAY		2.5		/* secs */
-#define	STATE_CHG_DELAY		4000000		/* us */
+#define	SUBSEQ_RA_DELAY		2.5		/* seconds */
 
 #define	OTH_TFC_DIST_THRESH	NM2MET(40)
 #define	PROX_DIST_THRESH	NM2MET(6)
 #define	PROX_ALT_THRESH		FEET2MET(1200)
+
+#define	PRINTF_ACF_FMT "alt_rptg:%d  pos:%3.04f/%2.4f/%4.1f  agl:%.0f  " \
+	"gs:%.1f  trk:%.0f  trk_v:%.2fx%.2f  vvel:%.1f"
+#define	PRINTF_ACF_ARGS(acf) \
+	(acf)->alt_rptg, (acf)->cur_pos.lat, (acf)->cur_pos.lon, \
+	(acf)->cur_pos.elev, (acf)->agl, (acf)->gs, (acf)->trk, \
+	(acf)->trk_v.x, (acf)->trk_v.y, (acf)->vvel
 
 typedef enum {
 	OTH_THREAT,		/* other traffic, empty diamond */
@@ -146,7 +152,7 @@ typedef struct {
 	tcas_adv_t	adv_state;
 	tcas_RA_t	*ra;
 	double		initial_ra_vs;	/* VS when first RA was issued */
-	uint64_t	change_t;	/* timestamp */
+	uint64_t	change_t;	/* microclock() timestamp */
 	tcas_mode_t	mode;
 } tcas_state_t;
 
@@ -361,6 +367,75 @@ static bool_t worker_shutdown = B_FALSE;
 
 static const sim_intf_ops_t *ops = NULL;
 
+static const char *
+RA_msg2str(tcas_RA_msg_t msg)
+{
+	switch (msg) {
+	case RA_MSG_CLB:
+		return "CLB";
+	case RA_MSG_CLB_CROSS:
+		return "CLB CROSS";
+	case RA_MSG_CLB_MORE:
+		return "INC CLIMB";
+	case RA_MSG_CLB_NOW:
+		return "CLB NOW";
+	case RA_MSG_CLEAR:
+		return "CLR";
+	case RA_MSG_DES:
+		return "DES";
+	case RA_MSG_DES_CROSS:
+		return "DES CROSS";
+	case RA_MSG_DES_MORE:
+		return "INC DESCEND";
+	case RA_MSG_DES_NOW:
+		return "DES NOW";
+	case RA_MSG_MONITOR_VS:
+		return "MON VS";
+	case RA_MSG_MAINT_VS:
+		return "MAINT VS";
+	case RA_MSG_MAINT_VS_CROSS:
+		return "MAINT VS CROSS";
+	case RA_MSG_LEVEL_OFF:
+		return "LEVEL OFF";
+	default:
+		return "<invalid>";
+	}
+}
+
+static const char *
+RA_type2str(tcas_RA_type_t type)
+{
+	if (type == RA_TYPE_CORRECTIVE)
+		return "CORR";
+	return "PREV";
+}
+
+static const char *
+RA_sense2str(tcas_RA_sense_t sense)
+{
+	switch (sense) {
+	case RA_SENSE_UPWARD:
+		return "UP";
+	case RA_SENSE_LEVEL_OFF:
+		return "LVL";
+	default:
+		return "DN";
+	}
+}
+
+static const char *
+RA_cross2str(tcas_RA_cross_t cross)
+{
+	switch (cross) {
+	case RA_CROSS_REQ:
+		return "REQ";
+	case RA_CROSS_REJ:
+		return "REJ";
+	default:
+		return "ANY";
+	}
+}
+
 static int
 acf_compar(const void *a, const void *b)
 {
@@ -387,8 +462,16 @@ update_my_position(double t)
 	    xtcas_obj_pos_get_vvel(&my_acf_glob.pos_upd, &my_acf_glob.vvel));
 	if (my_acf_glob.trend_data_ready)
 		my_acf_glob.trk_v = hdg2dir(my_acf_glob.trk);
+
+	dbg_log(tcas, 1, "my_pos: " PRINTF_ACF_FMT,
+	    PRINTF_ACF_ARGS(&my_acf_glob));
 }
 
+/*
+ * Updates the position of bogies (other aircraft). This calls into the
+ * sim interface to grab new aircraft position data. It then computes the
+ * deltas
+ */
 static void
 update_bogie_positions(double t, geo_pos2_t my_pos)
 {
@@ -433,6 +516,9 @@ update_bogie_positions(double t, geo_pos2_t my_pos)
 			my_acf_glob.trk_v = hdg2dir(my_acf_glob.trk);
 		/* mark acf as up-to-date */
 		acf->up_to_date = B_TRUE;
+
+		dbg_log(tcas, 2, "bogie %p " PRINTF_ACF_FMT, acf->acf_id,
+		    PRINTF_ACF_ARGS(acf));
 	}
 
 	/* walk the tree again and remove out-of-date aircraft */
@@ -440,10 +526,13 @@ update_bogie_positions(double t, geo_pos2_t my_pos)
 	    acf != NULL; acf = acf_next) {
 		acf_next = AVL_NEXT(&other_acf_glob, acf);
 		if (!acf->up_to_date) {
+			dbg_log(tcas, 2, "bogie %p contact lost", acf->acf_id);
 			avl_remove(&other_acf_glob, acf);
 			free(acf);
 		}
 	}
+
+	dbg_log(tcas, 1, "total bogies: %lu", avl_numnodes(&other_acf_glob));
 
 	free(pos);
 }
@@ -519,6 +608,14 @@ cpa_compar(const void *a, const void *b)
 	}
 }
 
+/*
+ * Creates a cpa_t.
+ * @param d_t Time from now until the CPA.
+ * @param acf_a Our aircraft involved in the CPA.
+ * @param acf_b Intruder aircraft involved in the CPA.
+ * @param pos_a Our aircraft's position at CPA.
+ * @param pos_b Intruder aircraft's position at CPA.
+ */
 static cpa_t *
 make_cpa(unsigned d_t, tcas_acf_t *acf_a, tcas_acf_t *acf_b,
     vect3_t pos_a, vect3_t pos_b)
@@ -593,7 +690,7 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 	    acf = AVL_NEXT(other_acf, acf)) {
 		vect2_t dir;
 		vect3_t pos_3d, vel, rel_vel, cpa_pos, my_cpa_pos;
-		double t_cpa;
+		double t_cpa, dist;
 		cpa_t *cpa;
 
 		if (!acf->trend_data_ready)
@@ -611,16 +708,29 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		 * If the CPA is in the past or too far into the future, don't
 		 * even bother.
 		 */
-		if (t_cpa <= 0 || t_cpa > CPA_MAX_T)
+		if (t_cpa <= 0 || t_cpa > CPA_MAX_T) {
+			dbg_log(tcas, 2, "bogie %p t_cpa: %.1f, culling",
+			    acf->acf_id, t_cpa);
 			continue;
+		}
 
 		cpa_pos = vect3_add(pos_3d, vect3_scmul(vel, t_cpa));
 		my_cpa_pos = vect3_add(my_pos_3d, vect3_scmul(my_vel, t_cpa));
 		/* If we are too far apart at CPA, don't even bother. */
-		if (vect3_abs(vect3_sub(cpa_pos, my_cpa_pos)) > CPA_MAX_DIST)
+		dist = vect3_abs(vect3_sub(cpa_pos, my_cpa_pos));
+		if (dist > CPA_MAX_DIST) {
+			dbg_log(tcas, 2, "bogie %p dist: %.0f, culling",
+			    acf->acf_id, dist);
 			continue;
+		}
 
 		cpa = make_cpa(t_cpa, my_acf, acf, my_cpa_pos, cpa_pos);
+		dbg_log(tcas, 1, "bogie %p cpa  d_t:%.1f  pos_a:%.0fx%.0fx%.0f"
+		    "  pos_b:%.0fx%.0fx%.0f  d_h:%.0f  d_v:%.0f",
+		    acf->acf_id, cpa->d_t,
+		    cpa->pos_a.x, cpa->pos_a.y, cpa->pos_a.z,
+		    cpa->pos_b.x, cpa->pos_b.y, cpa->pos_b.z,
+		    cpa->d_h, cpa->d_v);
 		avl_add(cpas, cpa);
 	}
 }
@@ -657,6 +767,7 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl)
 		    ((cpa->d_h <= sl->dmod_RA && cpa->d_v <= sl->zthr_RA &&
 		    cpa->d_t <= sl->tau_RA) ||
 		    (d_h <= sl->dmod_RA && d_v <= sl->zthr_RA))) {
+			dbg_log(tcas, 1, "bogie %p RA_THREAT", oacf->acf_id);
 			oacf->threat = RA_THREAT;
 			return;
 		}
@@ -677,6 +788,7 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl)
 		    cpa->d_v <= sl->zthr_TA) && cpa->d_t <= sl->tau_TA) ||
 		    (d_h <= sl->dmod_TA &&
 		    (!oacf->alt_rptg || d_v <= sl->zthr_TA))) {
+			dbg_log(tcas, 1, "bogie %p TA_THREAT", oacf->acf_id);
 			oacf->threat = TA_THREAT;
 			return;
 		}
@@ -694,8 +806,10 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl)
 		 */
 		if (d_h <= PROX_DIST_THRESH &&
 		    (!oacf->alt_rptg || d_v <= PROX_ALT_THRESH)) {
+			dbg_log(tcas, 1, "bogie %p PROX_THREAT", oacf->acf_id);
 			oacf->threat = PROX_THREAT;
 		} else {
+			dbg_log(tcas, 1, "bogie %p OTH_THREAT", oacf->acf_id);
 			oacf->threat = OTH_THREAT;
 		}
 	}
@@ -995,9 +1109,24 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		ASSERT(!isnan(d_t));
 		ASSERT(avl_numnodes(&ra_cpas) != 0);
 
+		dbg_log(tcas, 1, "resolve_CPAs: RA  count:%lu  adv_state:%d  "
+		    "elapsed:%.0f", avl_numnodes(&ra_cpas),
+		    tcas_state.adv_state,
+		    (now - tcas_state.change_t) / 1000000.0);
+
 		ra = CAS_logic(my_acf, tcas_state.ra, &ra_cpas, sl);
 		/* On initial annunciation, we must ALWAYS issue an RA */
 		ASSERT(ra != NULL || tcas_state.ra != NULL);
+
+		dbg_log(tcas, 1, "RA msg:%s  type:%s  sense:%s  cross:%s  "
+		    "in.min:%.1f  in.max:%.1f  out.min:%.1f  out.max:%.1f  "
+		    "rev:%d  cross:%d  alim:%d  min_sep:%.1f  vscorr:%.1f",
+		    RA_msg2str(ra->info->msg), RA_type2str(ra->info->type),
+		    RA_sense2str(ra->info->sense), RA_cross2str(
+		    ra->info->cross), ra->info->vs.in.min, ra->info->vs.in.max,
+		    ra->info->vs.out.min, ra->info->vs.out.max, ra->reversal,
+		    ra->crossing, ra->alim_achieved, ra->min_sep,
+		    ra->vs_corr_reqd);
 
 		if (ra != NULL) {
 			if (now - tcas_state.change_t >= STATE_CHG_DELAY) {
@@ -1033,6 +1162,9 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		 * annunciating TRAFFIC after an RA has been resolved, but
 		 * while the traffic still falls into the TA range.
 		 */
+		dbg_log(tcas, 1, "resolve_CPAs: TA  adv_state:%d  elapsed:%.0f",
+		    tcas_state.adv_state,
+		    (now - tcas_state.change_t) / 1000000.0);
 		if (tcas_state.adv_state < ADV_STATE_TA &&
 		    now - tcas_state.change_t >= STATE_CHG_DELAY) {
 			xtcas_play_msg(RA_MSG_TFC);
@@ -1043,6 +1175,9 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		}
 	} else if (tcas_state.adv_state != ADV_STATE_NONE &&
 	    now - tcas_state.change_t >= STATE_CHG_DELAY) {
+		dbg_log(tcas, 1, "resolve_CPAs: NONE  adv_state:%d  "
+		    "elapsed:%.0f", tcas_state.adv_state,
+		    (now - tcas_state.change_t) / 1000000.0);
 		if (tcas_state.adv_state == ADV_STATE_RA)
 			xtcas_play_msg(RA_MSG_CLEAR);
 		free(tcas_state.ra);
@@ -1057,15 +1192,29 @@ static void
 main_loop(void *ignored)
 {
 	const SL_t *sl = NULL;
+	double last_t = ops->get_time();
+
+	dbg_log(tcas, 1, "main_loop: entry (%.1f)", last_t);
 
 	UNUSED(ignored);
 	ASSERT(inited);
 
 	mutex_enter(&worker_lock);
-	for (uint64_t now = microclock(); !worker_shutdown;
-	    now += WORKER_LOOP_INTVAL) {
+	for (double now = microclock(); !worker_shutdown; now = microclock()) {
 		tcas_acf_t my_acf;
 		avl_tree_t other_acf, cpas;
+		double now_t = ops->get_time();
+
+		dbg_log(tcas, 1, "main_loop: start (%.1f)", now_t);
+
+		/* If sim time hasn't advanced, we're paused, so wait */
+		if (!(last_t < now_t)) {
+			dbg_log(tcas, 3, "main_loop: time hasn't progressed");
+			cv_timedwait(&worker_cv, &worker_lock,
+			    now + WORKER_LOOP_INTVAL);
+			continue;
+		}
+		last_t = now_t;
 
 		/*
 		 * We'll create a local copy of all aircraft positions so
@@ -1082,6 +1231,7 @@ main_loop(void *ignored)
 			sl = xtcas_SL_select(sl != NULL ? sl->SL_id : 1,
 			    my_acf.cur_pos.elev, my_acf.agl,
 			    tcas_state.mode == TCAS_MODE_TAONLY ? 2 : 0);
+			dbg_log(tcas, 1, "SL: %d", sl->SL_id);
 		}
 
 		/*
@@ -1104,12 +1254,16 @@ main_loop(void *ignored)
 		 */
 		destroy_acf_state(&my_acf, &other_acf);
 
+		dbg_log(tcas, 2, "main_loop: end");
+
 		/*
 		 * Jump forward at fixed intervals to guarantee our
 		 * execution schedule.
 		 */
-		cv_timedwait(&worker_cv, &worker_lock,
-		    now + WORKER_LOOP_INTVAL);
+		do {
+			cv_timedwait(&worker_cv, &worker_lock,
+			    now + WORKER_LOOP_INTVAL);
+		} while (microclock() < now + WORKER_LOOP_INTVAL);
 	}
 	mutex_exit(&worker_lock);
 }
@@ -1119,8 +1273,11 @@ xtcas_run(void)
 {
 	double t = ops->get_time();
 
+	dbg_log(tcas, 1, "run: %.1f", t);
+
 	ASSERT(inited);
 
+	/* protection in case the sim is paused */
 	if (t <= last_t)
 		return;
 
@@ -1139,6 +1296,8 @@ xtcas_run(void)
 void
 xtcas_init(const sim_intf_ops_t *intf_ops)
 {
+	dbg_log(tcas, 1, "init");
+
 	memset(&my_acf_glob, 0, sizeof (my_acf_glob));
 	avl_create(&other_acf_glob, acf_compar,
 	    sizeof (tcas_acf_t), offsetof(tcas_acf_t, node));
@@ -1159,6 +1318,8 @@ xtcas_init(const sim_intf_ops_t *intf_ops)
 void
 xtcas_fini(void)
 {
+	dbg_log(tcas, 1, "fini");
+
 	mutex_enter(&worker_lock);
 	worker_shutdown = B_TRUE;
 	cv_broadcast(&worker_cv);

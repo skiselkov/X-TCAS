@@ -200,6 +200,8 @@ floormul(double x, double y)
 #define	AVG(x, y)	(((x) + (y)) / 2)
 #endif	/* MIN or MAX */
 
+#define	SEC2USEC(sec)	(sec * 1000000ll)
+
 #ifdef	__cplusplus
 }
 #endif
