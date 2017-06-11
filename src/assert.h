@@ -20,7 +20,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2015 Saso Kiselkov. All rights reserved.
+ * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
 #ifndef	_XRAAS_ASSERT_H_

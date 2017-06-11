@@ -13,7 +13,7 @@
  * CDDL HEADER END
 */
 /*
- * Copyright 2016 Saso Kiselkov. All rights reserved.
+ * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
 #ifndef	_XTCAS_THREAD_H_
@@ -60,7 +60,9 @@ extern "C" {
 
 bool_t xtcas_cv_timedwait(condvar_t *cond, mutex_t *mtx, uint64_t microtime);
 
-#endif	/* APL || LIN */
+#else	/* !APL && !LIN */
+#error "Missing threading implementation for this platform"
+#endif	/* !APL && !LIN */
 
 #ifdef __cplusplus
 }

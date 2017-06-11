@@ -11,7 +11,7 @@
 #
 # CDDL HEADER END
 
-# Copyright 2016 Saso Kiselkov. All rights reserved.
+# Copyright 2017 Saso Kiselkov. All rights reserved.
 
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
