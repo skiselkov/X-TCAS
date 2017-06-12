@@ -39,7 +39,7 @@
 
 #include "xplane.h"
 
-#define	FLOOP_INTVAL			0.1
+#define	FLOOP_INTVAL			1.0
 #define	POS_UPDATE_INTVAL		0.1
 #define	XTCAS_PLUGIN_NAME		"X-TCAS 1.0"
 #define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas.1.0"

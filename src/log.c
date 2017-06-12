@@ -38,10 +38,15 @@
 
 #define	PREFIX		"X-TCAS"
 #define	DATE_FMT	"%Y-%m-%d %H:%M:%S"
+#ifndef	TEST_STANDALONE_BUILD
 #define	PREFIX_FMT	"%s %s[%s:%d]: ", timedate, PREFIX, filename, line
+#else	/* TEST_STANDALONE_BUILD */
+#define	PREFIX_FMT	"%s:%d: ", filename, line
+#endif	/* TEST_STANDALONE_BUILD */
 
 dbg_info_t xtcas_dbg = {
-	.all = 0, .snd = 0, .wav = 0, .tcas = 0, .xplane = 0, .test = 0
+	.all = 0, .snd = 0, .wav = 0, .tcas = 0, .xplane = 0, .test = 0,
+	.ra = 0, .cpa = 0
 };
 
 void
@@ -80,6 +85,8 @@ xtcas_log_impl_v(const char *filename, int line, const char *fmt, va_list ap)
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(buf);
 #endif
+	/* cut off the newline for fputs (which already appends it) */
+	buf[strlen(buf) - 1] = 0;
 	puts(buf);
 
 	free(buf);
@@ -176,6 +183,8 @@ xtcas_log_backtrace(void)
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(backtrace_buf);
 #endif
+	/* cut off the newline for fputs (which already appends it) */
+	msg[strlen(msg) - 1] = 0;
 	fputs(backtrace_buf, stderr);
 
 #else	/* !IBM */
@@ -200,6 +209,8 @@ xtcas_log_backtrace(void)
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(msg);
 #endif
+	/* cut off the newline for fputs (which already appends it) */
+	msg[strlen(msg) - 1] = 0;
 	fputs(msg, stderr);
 
 	free(msg);

@@ -31,6 +31,8 @@ typedef struct {
 	int	snd;
 	int	wav;
 	int	tcas;
+	int	ra;
+	int	cpa;
 	int	test;
 	int	xplane;
 } dbg_info_t;
@@ -53,6 +55,7 @@ void xtcas_log_backtrace(void);
 const char *xtcas_basename(const char *filename);
 #endif	/* !__GNUC__ && !__clang__ */
 
+#ifndef	TEST_STANDALONE_BUILD
 #define	dbg_log(class, level, ...) \
 	do { \
 		if (xtcas_dbg.class >= level || xtcas_dbg.all >= level) { \
@@ -60,6 +63,15 @@ const char *xtcas_basename(const char *filename);
 			    "[" #class "/" #level "]: " __VA_ARGS__); \
 		} \
 	} while (0)
+#else	/* TEST_STANDALONE_BUILD */
+#define	dbg_log(class, level, ...) \
+	do { \
+		if (xtcas_dbg.class >= level || xtcas_dbg.all >= level) { \
+			xtcas_log_impl(xtcas_basename(__FILE__), __LINE__,  \
+			    __VA_ARGS__); \
+		} \
+	} while (0)
+#endif	/* TEST_STANDALONE_BUILD */
 
 #ifdef __cplusplus
 }

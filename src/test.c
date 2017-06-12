@@ -58,6 +58,7 @@ typedef struct {
 	list_t		node;
 } acf_t;
 
+static fpp_t		fpp;
 static acf_t		my_acf = { .inited = B_FALSE };
 static list_t		other_acf;
 static geo_pos2_t	refpt = {0, 0};
@@ -65,6 +66,16 @@ static double		refrot = 0;
 static double		gnd_elev = 0;
 static double		scaleh = 100;
 static double		scalev = 200;
+
+static double get_time(void);
+static void get_my_acf_pos(geo_pos3_t *pos, double *alt_agl);
+static void get_oth_acf_pos(acf_pos_t **pos_p, size_t *num);
+
+static sim_intf_ops_t test_ops = {
+	.get_time = get_time,
+	.get_my_acf_pos = get_my_acf_pos,
+	.get_oth_acf_pos = get_oth_acf_pos
+};
 
 static bool_t
 sound_on(void)
@@ -309,7 +320,100 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	move(y, x);
 	printw("o");
 	move(y + 1, x + 2);
-	printw("%+03d%c", z_rel / 100, clb_symbol);
+	printw("%+04d%c", z_rel / 10, clb_symbol);
+}
+
+static void
+gui_display(WINDOW *win)
+{
+	int maxx = 80, maxy = 25;
+	char *buf;
+
+	getmaxyx(win, maxy, maxx);
+	buf = malloc(maxx);
+	memset(buf, ' ', maxx);
+	for (int i = 0; i < maxy; i++) {
+		move(i, 0);
+		printw(buf);
+	}
+	free(buf);
+
+	/* draw the position dots 10km around the origin point */
+	for (int i = (int)my_acf.pos.x / 1000 - 5;
+	    i <= (int)my_acf.pos.x / 1000 + 5; i++) {
+		for (int j = (int)my_acf.pos.y / 1000 - 5;
+		    j <= (int)my_acf.pos.y / 1000 + 5; j++) {
+			vect2_t v = VECT2(i * 1000 - my_acf.pos.x,
+			    j * 1000 - my_acf.pos.y);
+			int x, y;
+			v = vect2_rot(v, -my_acf.trk);
+			x = maxx / 2 + v.x / scaleh;
+			y = maxy / 2 - v.y / scalev;
+			if (x < 0 || x >= maxx || y < 0 || y >= maxy)
+				continue;
+			move(y, x);
+			printw(".");
+		}
+	}
+
+	move(maxy / 2, maxx / 2);
+	printw("^");
+	for (acf_t *acf = list_head(&other_acf); acf != NULL;
+	    acf = list_next(&other_acf, acf))
+		draw_acf(my_acf.pos, my_acf.trk, acf, maxy, maxx);
+
+	/* draw the heading tape */
+	move(0, maxx / 2 - 1);
+	printw("%03.0f", my_acf.trk);
+	move(1, maxx / 2);
+	printw("V");
+	for (int i = -2; i <= 2; i++) {
+		int trk = ((int)my_acf.trk + i * 10) / 10 * 10,
+		    trk_disp = trk;
+		if (trk_disp < 0)
+			trk_disp += 360;
+		else if (trk_disp > 359)
+			trk_disp -= 360;
+		move(2, maxx / 2 - ((int)my_acf.trk - trk) - 1);
+		printw("%03d", trk_disp);
+	}
+
+	/* draw the speed window */
+	move(maxy / 2 - 1, 0);
+	printw("+---+");
+	move(maxy / 2, 0);
+	printw("|%03.0f|", my_acf.gs);
+	move(maxy / 2 + 1, 0);
+	printw("+---+");
+
+	/* draw the altitude window */
+	move(maxy / 2 - 1, maxx - 10);
+	printw("+-----+");
+	move(maxy / 2, maxx - 10);
+	printw("|%05.0f|", my_acf.pos.z);
+	move(maxy / 2 + 1, maxx - 10);
+	printw("+-----+");
+
+	/* draw the VS tape */
+	move(maxy / 2, maxx - 3);
+	printw("===");
+	if (my_acf.vs >= 1 || my_acf.vs <= -1) {
+		if (my_acf.vs < 0) {
+			for (int i = 1; i < -(int)my_acf.vs; i++) {
+				move(maxy / 2 + i, maxx - 2);
+				printw("|");
+			}
+		} else {
+			for (int i = -1; i > -(int)my_acf.vs; i--) {
+				move(maxy / 2 + i, maxx - 2);
+				printw("|");
+			}
+		}
+		move(maxy / 2 - (int)my_acf.vs, maxx - 3);
+		printw("%+03.0f", my_acf.vs);
+	}
+
+	refresh();
 }
 
 int
@@ -319,18 +423,20 @@ main(int argc, char **argv)
 	int opt;
 	int debug_strength = 0;
 	char *snd_dir = "male1";
-	fpp_t fpp;
 	uint64_t now;
 	mutex_t mtx;
 	condvar_t cv;
 	int flags;
-
 	WINDOW *win;
+	bool_t gfx = B_TRUE;
 
 	list_create(&other_acf, sizeof (acf_t), offsetof(acf_t, node));
 
-	while ((opt = getopt(argc, argv, "dD:s:")) != -1) {
+	while ((opt = getopt(argc, argv, "gdD:s:")) != -1) {
 		switch (opt) {
+		case 'g':
+			gfx = B_FALSE;
+			break;
 		case 'd':
 			debug_strength++;
 			break;
@@ -341,11 +447,17 @@ main(int argc, char **argv)
 			} else if (strcmp(optarg, "snd") == 0) {
 				xtcas_dbg.snd += debug_strength;
 			} else if (strcmp(optarg, "wav") == 0) {
+				xtcas_dbg.wav += debug_strength;
+			} else if (strcmp(optarg, "tcas") == 0) {
 				xtcas_dbg.tcas += debug_strength;
 			} else if (strcmp(optarg, "xplane") == 0) {
 				xtcas_dbg.xplane += debug_strength;
 			} else if (strcmp(optarg, "test") == 0) {
 				xtcas_dbg.test += debug_strength;
+			} else if (strcmp(optarg, "ra") == 0) {
+				xtcas_dbg.ra += debug_strength;
+			} else if (strcmp(optarg, "cpa") == 0) {
+				xtcas_dbg.cpa += debug_strength;
 			} else {
 				fprintf(stderr, "Invalid argument to -D\n");
 				return (1);
@@ -382,7 +494,7 @@ main(int argc, char **argv)
 	if (!xtcas_snd_sys_init(snd_dir, sound_on))
 		return (1);
 
-	fpp = stereo_fpp_init(refpt, refrot, &wgs84, B_TRUE);
+	fpp = ortho_fpp_init(refpt, refrot, &wgs84, B_TRUE);
 
 	now = microclock();
 	mutex_init(&mtx);
@@ -392,104 +504,24 @@ main(int argc, char **argv)
 	flags |= O_NONBLOCK;
 	fcntl(STDIN_FILENO, F_SETFL, flags);
 
-	win = initscr();
-	ASSERT(win != NULL);
+	if (gfx) {
+		win = initscr();
+		ASSERT(win != NULL);
+	}
+
+	xtcas_init(&test_ops);
 
 	mutex_enter(&mtx);
 	while (getch() != 'q') {
-		int maxx = 80, maxy = 25;
-		char *buf;
-
 		step_acf(&my_acf, now, SIMSTEP);
 		for (acf_t *acf = list_head(&other_acf); acf != NULL;
 		    acf = list_next(&other_acf, acf))
 			step_acf(acf, now, SIMSTEP);
 
-		getmaxyx(win, maxy, maxx);
-		buf = malloc(maxx);
-		memset(buf, ' ', maxx);
-		for (int i = 0; i < maxy; i++) {
-			move(i, 0);
-			printw(buf);
-		}
-		free(buf);
+		xtcas_run();
 
-		/* draw the position dots 10km around the origin point */
-		for (int i = (int)my_acf.pos.x / 1000 - 5;
-		    i <= (int)my_acf.pos.x / 1000 + 5; i++) {
-			for (int j = (int)my_acf.pos.y / 1000 - 5;
-			    j <= (int)my_acf.pos.y / 1000 + 5; j++) {
-				vect2_t v = VECT2(i * 1000 - my_acf.pos.x,
-				    j * 1000 - my_acf.pos.y);
-				int x, y;
-				v = vect2_rot(v, -my_acf.trk);
-				x = maxx / 2 + v.x / scaleh;
-				y = maxy / 2 - v.y / scalev;
-				if (x < 0 || x >= maxx || y < 0 || y >= maxy)
-					continue;
-				move(y, x);
-				printw(".");
-			}
-		}
-
-		move(maxy / 2, maxx / 2);
-		printw("^");
-		for (acf_t *acf = list_head(&other_acf); acf != NULL;
-		    acf = list_next(&other_acf, acf))
-			draw_acf(my_acf.pos, my_acf.trk, acf, maxy, maxx);
-
-		/* draw the heading tape */
-		move(0, maxx / 2 - 1);
-		printw("%03.0f", my_acf.trk);
-		move(1, maxx / 2);
-		printw("V");
-		for (int i = -2; i <= 2; i++) {
-			int trk = ((int)my_acf.trk + i * 10) / 10 * 10,
-			    trk_disp = trk;
-			if (trk_disp < 0)
-				trk_disp += 360;
-			else if (trk_disp > 359)
-				trk_disp -= 360;
-			move(2, maxx / 2 - ((int)my_acf.trk - trk) - 1);
-			printw("%03d", trk_disp);
-		}
-
-		/* draw the speed window */
-		move(maxy / 2 - 1, 0);
-		printw("+---+");
-		move(maxy / 2, 0);
-		printw("|%03.0f|", my_acf.gs);
-		move(maxy / 2 + 1, 0);
-		printw("+---+");
-
-		/* draw the altitude window */
-		move(maxy / 2 - 1, maxx - 10);
-		printw("+-----+");
-		move(maxy / 2, maxx - 10);
-		printw("|%05.0f|", my_acf.pos.z);
-		move(maxy / 2 + 1, maxx - 10);
-		printw("+-----+");
-
-		/* draw the VS tape */
-		move(maxy / 2, maxx - 3);
-		printw("===");
-		if (my_acf.vs >= 1 || my_acf.vs <= -1) {
-			if (my_acf.vs < 0) {
-				for (int i = 1; i < -(int)my_acf.vs; i++) {
-					move(maxy / 2 + i, maxx - 2);
-					printw("|");
-				}
-			} else {
-				for (int i = -1; i > -(int)my_acf.vs; i--) {
-					move(maxy / 2 + i, maxx - 2);
-					printw("|");
-				}
-			}
-			move(maxy / 2 - (int)my_acf.vs, maxx - 3);
-			printw("%+03.0f", my_acf.vs);
-		}
-
-		refresh();
+		if (gfx)
+			gui_display(win);
 
 		cv_timedwait(&cv, &mtx, now + SIMSTEP);
 		now += SIMSTEP;
@@ -501,11 +533,20 @@ main(int argc, char **argv)
 	mutex_destroy(&mtx);
 	cv_destroy(&cv);
 
+	xtcas_fini();
+
+	for (maneuver_t *man = list_head(&my_acf.maneuvers); man != NULL;
+	    man = list_head(&my_acf.maneuvers)) {
+		list_remove(&my_acf.maneuvers, man);
+		free(man);
+	}
 	for (acf_t *acf = list_head(&other_acf); acf != NULL;
 	    acf = list_head(&other_acf)) {
 		for (maneuver_t *man = list_head(&acf->maneuvers); man != NULL;
-		    man = list_head(&acf->maneuvers))
+		    man = list_head(&acf->maneuvers)) {
+			list_remove(&acf->maneuvers, man);
 			free(man);
+		}
 		list_destroy(&acf->maneuvers);
 		list_remove(&other_acf, acf);
 		free(acf);
@@ -514,4 +555,36 @@ main(int argc, char **argv)
 
 	xtcas_snd_sys_fini();
 	return (0);
+}
+
+static double
+get_time(void)
+{
+	return (USEC2SEC(microclock()));
+}
+
+static void
+get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
+{
+	geo_pos2_t pos2 = fpp2geo(VECT3_TO_VECT2(my_acf.pos), &fpp);
+	*pos = GEO_POS3(pos2.lat, pos2.lon, my_acf.pos.z);
+	*alt_agl = my_acf.pos.z - gnd_elev;
+}
+
+static void
+get_oth_acf_pos(acf_pos_t **pos_p, size_t *num)
+{
+	size_t i = 0, n = 0;
+	for (acf_t *acf = list_head(&other_acf); acf != NULL;
+	    acf = list_next(&other_acf, acf))
+		n++;
+	*num = n;
+	*pos_p = calloc(n, sizeof (acf_pos_t));
+	for (acf_t *acf = list_head(&other_acf); acf != NULL;
+	    acf = list_next(&other_acf, acf)) {
+		acf_pos_t *pos = &(*pos_p)[i++];
+		geo_pos2_t pos2 = fpp2geo(VECT3_TO_VECT2(acf->pos), &fpp);
+		pos->acf_id = (void *)(uintptr_t)acf->id;
+		pos->pos = GEO_POS3(pos2.lat, pos2.lon, acf->pos.z);
+	}
 }

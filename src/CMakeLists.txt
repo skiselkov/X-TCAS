@@ -23,7 +23,7 @@ SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h log.h list.h list_impl.h
     riff.h)
 
 if("${TEST_STANDALONE_BUILD}" EQUAL "1")
-	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DTEST_STANDALONE_BUILD")
+	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DTEST_STANDALONE_BUILD -O0 -ggdb3")
 	LIST(APPEND SRC test.c)
 	LIST(APPEND HDR test.h)
 else()
@@ -57,7 +57,7 @@ endif()
 if(WIN32)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DCHECK_RESULT_USED=_Check_return_")
 else()
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -g -W -Wall -Wextra -Werror \
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -W -Wall -Wextra -Werror \
 	    --std=c99 \
 	    -DCHECK_RESULT_USED=\"__attribute__ ((warn_unused_result))\"")
 endif()
