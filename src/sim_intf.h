@@ -31,15 +31,32 @@ typedef struct {
 	avl_node_t	tree_node;
 } acf_pos_t;
 
-typedef double (*get_time_t)(void);
-typedef void (*get_my_acf_pos_t)(geo_pos3_t *pos, double *alt_agl);
-typedef void (*get_oth_acf_pos_t)(acf_pos_t **pos_p, size_t *num);
+typedef enum {
+	OTH_THREAT,		/* other traffic, draw as empty diamond */
+	PROX_THREAT,		/* proximate traffic, draw as filled diamond */
+	TA_THREAT,		/* traffic advisory, filled yellow circle */
+	RA_THREAT_PREV,		/* preventive or corrective resolution... */
+	RA_THREAT_CORR		/* ...advisory, draw as filled red square */
+} tcas_threat_t;
+
+typedef double (*get_time_t)(void *handle);
+typedef void (*get_my_acf_pos_t)(void *handle, geo_pos3_t *pos,
+    double *alt_agl);
+typedef void (*get_oth_acf_pos_t)(void *handle, acf_pos_t **pos_p, size_t *num);
+typedef void (*update_threat_t)(void *handle, void *acf_id,
+    tcas_threat_t level);
+typedef void (*update_RA_t)(void *handle, double min_green, double max_green,
+    double min_red, double max_red);
+
 typedef bool_t (*sound_on_t)(void);
 
 typedef struct {
+	void			*handle;
 	get_time_t		get_time;
 	get_my_acf_pos_t	get_my_acf_pos;
 	get_oth_acf_pos_t	get_oth_acf_pos;
+	update_threat_t		update_threat;
+	update_RA_t		update_RA;
 } sim_intf_ops_t;
 
 #ifdef	__cplusplus

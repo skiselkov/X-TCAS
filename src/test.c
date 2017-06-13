@@ -44,6 +44,7 @@ typedef struct {
 	double		d_h;	/* rate-of-change in heading (deg/s) */
 	double		d_vs;	/* rate-of-change in vertical speed (m/s^2) */
 	double		d_gs;	/* rate-of-change in ground speed (m/s^2) */
+	bool_t		automan;/* automatically maneuver in response to RAs */
 	list_node_t	node;
 } maneuver_t;
 
@@ -56,6 +57,7 @@ typedef struct {
 	double		vs;
 	double		gs;
 	list_t		node;
+	tcas_threat_t	threat_level;
 } acf_t;
 
 static fpp_t		fpp;
@@ -66,15 +68,23 @@ static double		refrot = 0;
 static double		gnd_elev = 0;
 static double		scaleh = 100;
 static double		scalev = 200;
+static double		min_green = 0, max_green = 0, min_red = 0, max_red = 0;
+static double		RA_start = 0;
+static int		RA_counter = 0;
+static double		reaction_fact = 1.0;
 
-static double get_time(void);
-static void get_my_acf_pos(geo_pos3_t *pos, double *alt_agl);
-static void get_oth_acf_pos(acf_pos_t **pos_p, size_t *num);
+static double get_time(void *handle);
+static void get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl);
+static void get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
+static void update_threat(void *handle, void *acf_id, tcas_threat_t level);
+static void update_RA(void *, double, double, double, double);
 
 static sim_intf_ops_t test_ops = {
 	.get_time = get_time,
 	.get_my_acf_pos = get_my_acf_pos,
-	.get_oth_acf_pos = get_oth_acf_pos
+	.get_oth_acf_pos = get_oth_acf_pos,
+	.update_threat = update_threat,
+	.update_RA = update_RA
 };
 
 static bool_t
@@ -247,6 +257,17 @@ read_command_file(FILE *fp)
 				    "expected a number following \"spd\"\n");
 				return (B_FALSE);
 			}
+		} else if (strcmp(cmd, "auto") == 0) {
+			maneuver_t *man;
+			if (acf == NULL || acf->id != 0 ||
+			    (man = list_tail(&acf->maneuvers)) == NULL) {
+				fprintf(stderr, "Command file syntax error: "
+				    "\"auto\" must be preceded by \"man\" "
+				    "and may only be used for own "
+				    "(non-intruder) aircraft.\n");
+				return (B_FALSE);
+			}
+			man->automan = B_TRUE;
 		} else {
 			fprintf(stderr, "Command file syntax error: "
 			    "unknown keyword \"%s\"\n", cmd);
@@ -255,6 +276,12 @@ read_command_file(FILE *fp)
 	}
 
 	return (B_TRUE);
+}
+
+static inline double
+vs2tgt(double cur_vs, double targ_vs, double vs)
+{
+	return (cur_vs < targ_vs ? vs : -vs);
 }
 
 static void
@@ -272,10 +299,46 @@ step_acf(acf_t *acf, uint64_t now, uint64_t step)
 			/* just started this maneuver */
 			man->s_t = now;
 		}
-		if (man->s_t + SEC2USEC(man->d_t) <= now) {
+		if (man->s_t + SEC2USEC(man->d_t) <= now && !man->automan) {
 			/* maneuver has ended */
 			list_remove(&acf->maneuvers, man);
 			free(man);
+		} else if (man->automan) {
+			double delay = (RA_counter <= 1 ? 5.0 : 2.5) *
+			    reaction_fact;
+			double d_vs_man = (RA_counter <= 1 ? 2.5 : 3.3);
+
+			/* auto-maneuver our own aircraft */
+			if (RA_counter == 0) {
+				if (acf->vs != 0) {
+					d_vs = vs2tgt(acf->vs, 0, d_vs_man);
+					if (fabs(d_vs) > acf->vs)
+						d_vs /= 4;
+				}
+				break;
+			}
+			if (USEC2SEC(now) < RA_start + delay)
+				break;
+			if (min_green != max_green) {
+				if (fabs(acf->vs - min_green) <
+				    fabs(acf->vs - max_green)) {
+					d_vs = vs2tgt(acf->vs, min_green,
+					    d_vs_man);
+				} else {
+					d_vs = vs2tgt(acf->vs, max_green,
+					    d_vs_man);
+				}
+			} else {
+				if (fabs(acf->vs - min_red) <
+				    fabs(acf->vs - max_red)) {
+					d_vs = vs2tgt(acf->vs, min_red,
+					    d_vs_man);
+				} else {
+					d_vs = vs2tgt(acf->vs, max_red,
+					    d_vs_man);
+				}
+			}
+			break;
 		} else {
 			/* maneuver is active */
 			d_h = man->d_h;
@@ -306,6 +369,27 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	vect2_t xy = VECT2(my_pos.x - acf->pos.x, my_pos.y - acf->pos.y);
 	int z_rel = acf->pos.z - my_pos.z;
 	char clb_symbol = ' ';
+	char *acf_symbol;
+	int color;
+
+	switch (acf->threat_level) {
+	case OTH_THREAT:
+		acf_symbol = "o";
+		color = 0;
+		break;
+	case PROX_THREAT:
+		acf_symbol = "o";
+		color = 1;
+		break;
+	case TA_THREAT:
+		acf_symbol = "O";
+		color = 2;
+		break;
+	default:
+		acf_symbol = "X";
+		color = 3;
+		break;
+	}
 
 	if (acf->vs >= FPM2MPS(500))
 		clb_symbol = '^';
@@ -315,12 +399,17 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	xy = vect2_rot(xy, -my_trk);
 	x = cx - xy.x / scaleh;
 	y = cy + xy.y / scalev;
-	if (x < 0 || x >= maxx || y < 0 || y >= maxy)
+	if (x < 0 || x + 5 >= maxx || y < 0 || y >= maxy)
 		return;
+
+	if (color > 0)
+		attron(COLOR_PAIR(color));
 	move(y, x);
-	printw("o");
-	move(y + 1, x + 2);
-	printw("%+04d%c", z_rel / 10, clb_symbol);
+	printw("%s %+04d%c", acf_symbol, z_rel / 10, clb_symbol);
+	move(y + 1, x + 3);
+	printw("%+03.0f", acf->vs);
+	if (color > 0)
+		attroff(COLOR_PAIR(color));
 }
 
 static void
@@ -387,30 +476,52 @@ gui_display(WINDOW *win)
 	printw("+---+");
 
 	/* draw the altitude window */
-	move(maxy / 2 - 1, maxx - 10);
+	move(maxy / 2 - 1, maxx - 11);
 	printw("+-----+");
-	move(maxy / 2, maxx - 10);
+	move(maxy / 2, maxx - 11);
 	printw("|%05.0f|", my_acf.pos.z);
-	move(maxy / 2 + 1, maxx - 10);
+	move(maxy / 2 + 1, maxx - 11);
 	printw("+-----+");
 
 	/* draw the VS tape */
-	move(maxy / 2, maxx - 3);
+	move(maxy / 2, maxx - 4);
 	printw("===");
 	if (my_acf.vs >= 1 || my_acf.vs <= -1) {
 		if (my_acf.vs < 0) {
 			for (int i = 1; i < -(int)my_acf.vs; i++) {
-				move(maxy / 2 + i, maxx - 2);
+				move(maxy / 2 + i, maxx - 3);
 				printw("|");
 			}
 		} else {
 			for (int i = -1; i > -(int)my_acf.vs; i--) {
-				move(maxy / 2 + i, maxx - 2);
+				move(maxy / 2 + i, maxx - 3);
 				printw("|");
 			}
 		}
-		move(maxy / 2 - (int)my_acf.vs, maxx - 3);
+		move(maxy / 2 - (int)my_acf.vs, maxx - 4);
 		printw("%+03.0f", my_acf.vs);
+	}
+
+	if (min_green != max_green) {
+		attron(COLOR_PAIR(4));
+		for (int i = -20; i < 20; i++) {
+			if (min_green <= i && i <= max_green) {
+				move(maxy / 2 - i, maxx - 1);
+				printw("O");
+			}
+		}
+		attroff(COLOR_PAIR(4));
+	}
+
+	if (min_red != max_red) {
+		attron(COLOR_PAIR(3));
+		for (int i = -20; i < 20; i++) {
+			if (min_red <= i && i <= max_red) {
+				move(maxy / 2 - i, maxx - 1);
+				printw("X");
+			}
+		}
+		attroff(COLOR_PAIR(3));
 	}
 
 	refresh();
@@ -432,8 +543,11 @@ main(int argc, char **argv)
 
 	list_create(&other_acf, sizeof (acf_t), offsetof(acf_t, node));
 
-	while ((opt = getopt(argc, argv, "gdD:s:")) != -1) {
+	while ((opt = getopt(argc, argv, "r:gdD:s:")) != -1) {
 		switch (opt) {
+		case 'r':
+			reaction_fact = atof(optarg);
+			break;
 		case 'g':
 			gfx = B_FALSE;
 			break;
@@ -507,6 +621,11 @@ main(int argc, char **argv)
 	if (gfx) {
 		win = initscr();
 		ASSERT(win != NULL);
+		start_color();
+		init_pair(1, COLOR_BLACK, COLOR_WHITE);
+		init_pair(2, COLOR_YELLOW, COLOR_BLACK);
+		init_pair(3, COLOR_RED, COLOR_BLACK);
+		init_pair(4, COLOR_GREEN, COLOR_BLACK);
 	}
 
 	xtcas_init(&test_ops);
@@ -558,23 +677,26 @@ main(int argc, char **argv)
 }
 
 static double
-get_time(void)
+get_time(void *handle)
 {
+	UNUSED(handle);
 	return (USEC2SEC(microclock()));
 }
 
 static void
-get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
+get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl)
 {
 	geo_pos2_t pos2 = fpp2geo(VECT3_TO_VECT2(my_acf.pos), &fpp);
+	UNUSED(handle);
 	*pos = GEO_POS3(pos2.lat, pos2.lon, my_acf.pos.z);
 	*alt_agl = my_acf.pos.z - gnd_elev;
 }
 
 static void
-get_oth_acf_pos(acf_pos_t **pos_p, size_t *num)
+get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 {
 	size_t i = 0, n = 0;
+	UNUSED(handle);
 	for (acf_t *acf = list_head(&other_acf); acf != NULL;
 	    acf = list_next(&other_acf, acf))
 		n++;
@@ -586,5 +708,37 @@ get_oth_acf_pos(acf_pos_t **pos_p, size_t *num)
 		geo_pos2_t pos2 = fpp2geo(VECT3_TO_VECT2(acf->pos), &fpp);
 		pos->acf_id = (void *)(uintptr_t)acf->id;
 		pos->pos = GEO_POS3(pos2.lat, pos2.lon, acf->pos.z);
+	}
+}
+
+static void
+update_threat(void *handle, void *acf_id, tcas_threat_t level)
+{
+	UNUSED(handle);
+	for (acf_t *acf = list_head(&other_acf); acf != NULL;
+	    acf = list_next(&other_acf, acf)) {
+		if (acf_id == (void *)(uintptr_t)acf->id) {
+			acf->threat_level = level;
+			return;
+		}
+	}
+	abort();
+}
+
+static void
+update_RA(void *handle, double min_g, double max_g, double min_r, double max_r)
+{
+	UNUSED(handle);
+	min_green = min_g;
+	max_green = max_g;
+	min_red = min_r;
+	max_red = max_r;
+
+	if (min_green == max_green && min_red == max_red) {
+		/* clear of conflict */
+		RA_counter = 0;
+	} else {
+		RA_start = get_time(NULL);
+		RA_counter++;
 	}
 }

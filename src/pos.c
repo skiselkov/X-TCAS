@@ -108,11 +108,13 @@ xtcas_obj_pos_get_trk(const obj_pos_t *pos, double *trk)
  * derivative.
  */
 bool_t
-xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel)
+xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel, double *d_vvel)
 {
 	double e1, e2, e3;
 	double dt1 = pos->time[pos->latest_step] -
 	    pos->time[STEP_BACK(pos->latest_step)];
+	double dt2 = pos->time[STEP_BACK(pos->latest_step)] -
+	    pos->time[STEP_BACK(STEP_BACK(pos->latest_step))];
 
 	e1 = pos->pos[pos->latest_step].elev;
 	e2 = pos->pos[STEP_BACK(pos->latest_step)].elev;
@@ -122,6 +124,15 @@ xtcas_obj_pos_get_vvel(const obj_pos_t *pos, double *vvel)
 		if (pos->populated_steps >= 2) {
 			ASSERT3F(dt1, >, 0.0);
 			*vvel = (e1 - e2) / dt1;
+		} else {
+			return (B_FALSE);
+		}
+	}
+	if (d_vvel != NULL) {
+		if (pos->populated_steps >= 3) {
+			ASSERT3F(dt1, >, 0.0);
+			ASSERT3F(dt2, >, 0.0);
+			*d_vvel = ((e1 - e2) / dt1) - ((e2 - e3) / dt2);
 		} else {
 			return (B_FALSE);
 		}

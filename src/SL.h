@@ -34,7 +34,7 @@ extern "C" {
  * have to waste time resolving them.
  */
 enum {
-	CPA_MAX_T =	120,	/* seconds */
+	CPA_MAX_T =	600,	/* seconds */
 	CPA_MAX_DIST =	5000	/* meters */
 };
 

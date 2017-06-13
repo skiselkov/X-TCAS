@@ -67,8 +67,7 @@ const char *xtcas_basename(const char *filename);
 #define	dbg_log(class, level, ...) \
 	do { \
 		if (xtcas_dbg.class >= level || xtcas_dbg.all >= level) { \
-			xtcas_log_impl(xtcas_basename(__FILE__), __LINE__,  \
-			    __VA_ARGS__); \
+			xtcas_log_impl(NULL, 0, __VA_ARGS__); \
 		} \
 	} while (0)
 #endif	/* TEST_STANDALONE_BUILD */

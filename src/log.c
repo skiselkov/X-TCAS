@@ -41,7 +41,7 @@
 #ifndef	TEST_STANDALONE_BUILD
 #define	PREFIX_FMT	"%s %s[%s:%d]: ", timedate, PREFIX, filename, line
 #else	/* TEST_STANDALONE_BUILD */
-#define	PREFIX_FMT	"%s:%d: ", filename, line
+#define	PREFIX_FMT	"%s:%d: ", filename ? filename : "", line
 #endif	/* TEST_STANDALONE_BUILD */
 
 dbg_info_t xtcas_dbg = {
@@ -76,18 +76,17 @@ xtcas_log_impl_v(const char *filename, int line, const char *fmt, va_list ap)
 	va_copy(ap_copy, ap);
 	len = vsnprintf(NULL, 0, fmt, ap_copy);
 
-	buf = (char *)malloc(prefix_len + len + 2);
+	buf = (char *)calloc(prefix_len + len + 2, 1);
 
 	(void) snprintf(buf, prefix_len + 1, PREFIX_FMT);
 	(void) vsnprintf(&buf[prefix_len], len + 1, fmt, ap);
-	(void) sprintf(&buf[strlen(buf)], "\n");
+	strncat(buf, "\n", prefix_len + len + 2);
 
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(buf);
 #endif
-	/* cut off the newline for fputs (which already appends it) */
-	buf[strlen(buf) - 1] = 0;
-	puts(buf);
+	printf("%s", buf);
+	fflush(stdout);
 
 	free(buf);
 }
@@ -183,9 +182,7 @@ xtcas_log_backtrace(void)
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(backtrace_buf);
 #endif
-	/* cut off the newline for fputs (which already appends it) */
-	msg[strlen(msg) - 1] = 0;
-	fputs(backtrace_buf, stderr);
+	fprintf(stderr, "%s", msg);
 
 #else	/* !IBM */
 
@@ -209,9 +206,7 @@ xtcas_log_backtrace(void)
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(msg);
 #endif
-	/* cut off the newline for fputs (which already appends it) */
-	msg[strlen(msg) - 1] = 0;
-	fputs(msg, stderr);
+	fprintf(stderr, "%s", msg);
 
 	free(msg);
 	free(fnames);
