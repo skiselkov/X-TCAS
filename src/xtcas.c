@@ -38,7 +38,7 @@
 #define	EQ_ALT_THRESH		FEET2MET(100)	/* equal altitude threshold */
 #define	LEVEL_VVEL_THRESH	FPM2MPS(300)	/* m/s */
 #define	D_VVEL_MAN_THRESH	FPM2MPS(200)	/* m/s^2 */
-#define	D_VVEL_MAN_TIME		FPM2MPS(2.5)	/* seconds */
+#define	D_VVEL_MAN_TIME		FPM2MPS(6)	/* seconds */
 #define	NUM_RA_INFOS		25
 
 #define	WORKER_LOOP_INTVAL	SEC2USEC(1)	/* microseconds */
@@ -104,45 +104,28 @@ typedef struct tcas_acf {
 } tcas_acf_t;
 
 typedef enum {
-	ADV_STATE_NONE,
-	ADV_STATE_TA,
-	ADV_STATE_RA
-} tcas_adv_t;
-
-typedef enum {
-	RA_SENSE_UPWARD,
-	RA_SENSE_LEVEL_OFF,
-	RA_SENSE_DOWNWARD
-} tcas_RA_sense_t;
-
-typedef enum {
-	RA_TYPE_CORRECTIVE,
-	RA_TYPE_PREVENTIVE
-} tcas_RA_type_t;
-
-typedef enum {
 	RA_CROSS_REQ,
 	RA_CROSS_REJ,
 	RA_CROSS_ANY
 } tcas_RA_cross_t;
 
 typedef struct {
-	tcas_RA_msg_t	msg, rev_msg;
+	double min;
+	double max;
+} vs_band_t;
+
+typedef struct {
+	tcas_msg_t	msg, rev_msg;
 	bool_t		initial;
 	bool_t		subseq;
 	tcas_RA_sense_t	sense;
 	tcas_RA_type_t	type;
 	tcas_RA_cross_t	cross;
 	struct {
-		struct {
-			double min, max;
-		} in;
-		struct {
-			double min, max;
-		} out;
-		struct {
-			double min, max;
-		} rej;
+		vs_band_t	in;
+		vs_band_t	out;
+		vs_band_t	red_lo;
+		vs_band_t	red_hi;
 	} vs;
 } tcas_RA_info_t;
 
@@ -158,22 +141,6 @@ typedef struct {
 	double			vs_corr_reqd;	/* required VS correction */
 	avl_node_t		node;
 } tcas_RA_t;
-
-typedef enum {
-	RA_STRENGTH_1,
-	RA_STRENGTH_2
-} tcas_RA_strength_t;
-
-typedef enum {
-	TCAS_MODE_TARA,
-	TCAS_MODE_TAONLY
-} tcas_mode_t;
-
-typedef enum {
-	TCAS_FILTER_NONE,
-	TCAS_FILTER_ABV,
-	TCAS_FILTER_BLW
-} tcas_filter_t;
 
 typedef struct {
 	void		*acf_id;
@@ -214,7 +181,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = 0, .vs.in.max = INF_VS,
 	.vs.out.min = 0, .vs.out.max = INF_VS,
-	.vs.rej.min = -INF_VS, .vs.rej.max = 0
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = 0,
+	.vs.red_hi.min = 0, .vs.red_hi.max = 0
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
@@ -222,7 +190,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = FPM2MPS(-500), .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(-500), .vs.out.max = INF_VS,
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(-500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-500),
+	.vs.red_hi.min = FPM2MPS(-500), .vs.red_hi.max = FPM2MPS(-500)
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
@@ -230,7 +199,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = FPM2MPS(-1000), .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(-1000), .vs.out.max = INF_VS,
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(-1000)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-1000),
+	.vs.red_hi.min = FPM2MPS(-1000), .vs.red_hi.max = FPM2MPS(-1000)
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
@@ -238,7 +208,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = FPM2MPS(-2000), .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(-2000), .vs.out.max = INF_VS,
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(-2000)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-2000),
+	.vs.red_hi.min = FPM2MPS(-2000), .vs.red_hi.max = FPM2MPS(-2000)
     },
 
 /* Preventive descending RAs */
@@ -248,7 +219,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = -INF_VS, .vs.in.max = 0,
 	.vs.out.min = -INF_VS, .vs.out.max = 0,
-	.vs.rej.min = 0, .vs.rej.max = INF_VS
+	.vs.red_lo.min = 0, .vs.red_lo.max = 0,
+	.vs.red_hi.min = 0, .vs.red_hi.max = INF_VS
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
@@ -256,7 +228,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(500),
 	.vs.out.min = -INF_VS, .vs.out.max = FPM2MPS(500),
-	.vs.rej.min = FPM2MPS(500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = FPM2MPS(500), .vs.red_lo.max = FPM2MPS(500),
+	.vs.red_hi.min = FPM2MPS(500), .vs.red_hi.max = INF_VS
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
@@ -264,7 +237,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(1000),
 	.vs.out.min = -INF_VS, .vs.out.max = FPM2MPS(1000),
-	.vs.rej.min = FPM2MPS(1000), .vs.rej.max = INF_VS
+	.vs.red_lo.min = FPM2MPS(1000), .vs.red_lo.max = FPM2MPS(1000),
+	.vs.red_hi.min = FPM2MPS(1000), .vs.red_hi.max = INF_VS
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
@@ -272,7 +246,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(2000),
 	.vs.out.min = -INF_VS, .vs.out.max = FPM2MPS(2000),
-	.vs.rej.min = FPM2MPS(2000), .vs.rej.max = INF_VS
+	.vs.red_lo.min = FPM2MPS(2000), .vs.red_lo.max = FPM2MPS(2000),
+	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = INF_VS
     },
 
 /* Preventive level RA */
@@ -282,7 +257,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(-100), .vs.out.max = FPM2MPS(100),
-	.vs.rej.min = 0, .vs.rej.max = 0
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-100),
+	.vs.red_hi.min = FPM2MPS(100), .vs.red_hi.max = INF_VS
     },
 
 /* Corrective level-off RAs */
@@ -290,17 +266,19 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.msg = RA_MSG_LEVEL_OFF, .rev_msg = RA_MSG_LEVEL_OFF,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
-	.vs.in.min = FPM2MPS(-500), .vs.in.max = INF_VS,
-	.vs.out.min = -LEVEL_VVEL_THRESH, .vs.out.max = 0,
-	.vs.rej.min = 0, .vs.rej.max = INF_VS
+	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
+	.vs.out.min = FPM2MPS(-300), .vs.out.max = 0,
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = -LEVEL_VVEL_THRESH,
+	.vs.red_hi.min = 0, .vs.red_hi.max = INF_VS,
     },
     {	/* LEVEL OFF */
 	.msg = RA_MSG_LEVEL_OFF, .rev_msg = RA_MSG_LEVEL_OFF,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
-	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(500),
-	.vs.out.min = 0, .vs.out.max = LEVEL_VVEL_THRESH,
-	.vs.rej.min = -INF_VS, .vs.rej.max = 0
+	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
+	.vs.out.min = 0, .vs.out.max = FPM2MPS(300),
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = 0,
+	.vs.red_hi.min = LEVEL_VVEL_THRESH, .vs.red_hi.max = INF_VS
     },
 
 /* Corrective climbing RAs */
@@ -310,7 +288,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
 	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(4400),
 	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(4400),
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(1500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
+	.vs.red_hi.min = FPM2MPS(4400), .vs.red_hi.max = INF_VS
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN - large VS range */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
@@ -318,7 +297,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
 	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(4400),
 	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(4400),
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(1500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
+	.vs.red_hi.min = FPM2MPS(4400), .vs.red_hi.max = INF_VS
     },
     {	/* MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN */
 	.msg = RA_MSG_MAINT_VS_CROSS, .rev_msg = -1,
@@ -326,7 +306,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
 	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(2000),
 	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(1500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
+	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = INF_VS
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
@@ -334,7 +315,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
 	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(2000),
 	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(1500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
+	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = INF_VS
     },
     {	/* CLIMB, CLIMB */
 	.msg = RA_MSG_CLB, .rev_msg = RA_MSG_CLB_NOW,
@@ -342,7 +324,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
 	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(1500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
+	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = FPM2MPS(2000)
     },
     {	/* CLIMB, CROSSING CLIMB */
 	.msg = RA_MSG_CLB_CROSS, .rev_msg = RA_MSG_CLB_NOW,
@@ -350,7 +333,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
 	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(1500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
+	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = FPM2MPS(2000)
     },
     {	/* INCREASE CLIMB */
 	.msg = RA_MSG_CLB_MORE, .rev_msg = -1,
@@ -358,7 +342,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = FPM2MPS(500), .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(2500), .vs.out.max = FPM2MPS(4400),
-	.vs.rej.min = -INF_VS, .vs.rej.max = FPM2MPS(2500)
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(2500),
+	.vs.red_hi.min = FPM2MPS(4400), .vs.red_hi.max = FPM2MPS(4400)
     },
 
 
@@ -369,7 +354,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REQ,
 	.vs.in.min = FPM2MPS(-4400), .vs.in.max = FPM2MPS(-1500),
 	.vs.out.min = FPM2MPS(-4400), .vs.out.max = FPM2MPS(-1500),
-	.vs.rej.min = FPM2MPS(-1500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = FPM2MPS(-4400), .vs.red_lo.max = FPM2MPS(-4400),
+	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN - large VS range */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
@@ -377,7 +363,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REJ,
 	.vs.in.min = FPM2MPS(-4400), .vs.in.max = FPM2MPS(-1500),
 	.vs.out.min = FPM2MPS(-4400), .vs.out.max = FPM2MPS(-1500),
-	.vs.rej.min = FPM2MPS(-1500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = FPM2MPS(-4400), .vs.red_lo.max = FPM2MPS(-4400),
+	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
     },
     {	/* MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN - high VS range */
 	.msg = RA_MSG_MAINT_VS_CROSS, .rev_msg = -1,
@@ -385,7 +372,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REQ,
 	.vs.in.min = FPM2MPS(-2000), .vs.in.max = FPM2MPS(-1500),
 	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.rej.min = FPM2MPS(-1500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-2000),
+	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
@@ -393,7 +381,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REJ,
 	.vs.in.min = FPM2MPS(-2000), .vs.in.max = FPM2MPS(-1500),
 	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.rej.min = FPM2MPS(-1500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-2000),
+	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
     },
     {	/* DESCEND, DESCEND */
 	.msg = RA_MSG_DES, .rev_msg = RA_MSG_DES_NOW,
@@ -401,7 +390,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
 	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.rej.min = FPM2MPS(-1500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = FPM2MPS(-2000), .vs.red_lo.max = FPM2MPS(-2000),
+	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
     },
     {	/* DESCEND, CROSSING DESCEND */
 	.msg = RA_MSG_DES_CROSS, .rev_msg = RA_MSG_DES_NOW,
@@ -409,7 +399,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
 	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.rej.min = FPM2MPS(-1500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = FPM2MPS(-2000), .vs.red_lo.max = FPM2MPS(-2000),
+	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
     },
     {	/* INCREASE DESCENT */
 	.msg = RA_MSG_DES_MORE, .rev_msg = -1,
@@ -417,7 +408,8 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_ANY,
 	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(-500),
 	.vs.out.min = FPM2MPS(-4400), .vs.out.max = FPM2MPS(-2500),
-	.vs.rej.min = FPM2MPS(-2500), .vs.rej.max = INF_VS
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-4400),
+	.vs.red_hi.min = FPM2MPS(-2500), .vs.red_hi.max = INF_VS
     }
 };
 
@@ -436,7 +428,7 @@ static bool_t worker_shutdown = B_FALSE;
 static const sim_intf_ops_t *ops = NULL;
 
 static const char *
-RA_msg2str(tcas_RA_msg_t msg)
+RA_msg2str(tcas_msg_t msg)
 {
 	switch (msg) {
 	case RA_MSG_CLB:
@@ -465,8 +457,47 @@ RA_msg2str(tcas_RA_msg_t msg)
 		return "MAINTVSCROSS";
 	case RA_MSG_LEVEL_OFF:
 		return "LEVELOFF";
+	case RA_MSG_TFC:
+		return "TFC";
 	default:
 		return "<invalid>";
+	}
+}
+
+const char *
+xtcas_RA_msg2text(tcas_msg_t msg)
+{
+	switch (msg) {
+	case RA_MSG_CLB:
+		return "CLIMB CLIMB";
+	case RA_MSG_CLB_CROSS:
+		return "CLIMB CROSSING CLIMB";
+	case RA_MSG_CLB_MORE:
+		return "INCREASE CLIMB";
+	case RA_MSG_CLB_NOW:
+		return "CLIMB, CLIMB NOW";
+	case RA_MSG_CLEAR:
+		return "CLEAR OF CONFLICT";
+	case RA_MSG_DES:
+		return "DESCEND DESCEND";
+	case RA_MSG_DES_CROSS:
+		return "DESCEND CROSSING DESCEND";
+	case RA_MSG_DES_MORE:
+		return "INCREASE DESCENT";
+	case RA_MSG_DES_NOW:
+		return "DESCEND, DESCEND NOW";
+	case RA_MSG_MONITOR_VS:
+		return "MONITOR VERTICAL SPEED";
+	case RA_MSG_MAINT_VS:
+		return "MAINTAIN VERTICAL SPEED, MAINTAIN";
+	case RA_MSG_MAINT_VS_CROSS:
+		return "MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN";
+	case RA_MSG_LEVEL_OFF:
+		return "LEVEL OFF";
+	case RA_MSG_TFC:
+		return "TRAFFIC TRAFFIC";
+	default:
+		return "";
 	}
 }
 
@@ -562,6 +593,8 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 	fpp_t fpp = ortho_fpp_init(GEO3_TO_GEO2(my_pos), 0, &wgs84, B_FALSE);
 	double gnd_level = (my_alt_agl <= ON_GROUND_AGL_CHK_THRESH) ?
 	    (my_pos.elev - my_alt_agl) : MIN_ELEV;
+	tcas_filter_t filter = tcas_state.filter;
+	tcas_mode_t mode = tcas_state.mode;
 
 	ops->get_oth_acf_pos(ops->handle, &pos, &count);
 
@@ -575,6 +608,31 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		tcas_acf_t srch = { .acf_id = pos[i].acf_id };
 		tcas_acf_t *acf = avl_find(&other_acf_glob, &srch, &where);
 		vect2_t proj;
+
+		/*
+		 * Apply our vertical detection filter (ALL/ABV/BLW). The
+		 * THRT display filter is applied in the threat level
+		 * assignment function.
+		 */
+		switch (filter) {
+		case TCAS_FILTER_ABV:
+			if (pos[i].pos.elev > my_pos.elev + NORM_VERT_FILTER ||
+			    pos[i].pos.elev < my_pos.elev - SHORT_VERT_FILTER)
+				continue;
+			break;
+		case TCAS_FILTER_BLW:
+			if (pos[i].pos.elev > my_pos.elev + SHORT_VERT_FILTER ||
+			    pos[i].pos.elev < my_pos.elev - NORM_VERT_FILTER)
+				continue;
+			break;
+		default:
+			if (pos[i].pos.elev > my_pos.elev + NORM_VERT_FILTER ||
+			    pos[i].pos.elev < my_pos.elev - NORM_VERT_FILTER)
+				continue;
+			break;
+		}
+		if (mode == TCAS_MODE_STBY)
+			continue;
 
 		if (acf == NULL) {
 			acf = calloc(1, sizeof (*acf));
@@ -614,6 +672,8 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		acf_next = AVL_NEXT(&other_acf_glob, acf);
 		if (!acf->up_to_date) {
 			dbg_log(tcas, 2, "bogie %p contact lost", acf->acf_id);
+			if (ops->delete_contact != NULL)
+				ops->delete_contact(ops->handle, acf->acf_id);
 			avl_remove(&other_acf_glob, acf);
 			free(acf);
 		}
@@ -886,7 +946,9 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 		 * threat, we might still derive a threat level from a hint.
 		 */
 		hint = avl_find(RA_hints, &srch, NULL);
-		if (hint != NULL && cpa->d_t <= sl->tau_RA) {
+		if (hint != NULL && (isnan(tcas_state.initial_ra_vs) ||
+		    (d_v <= sl->zthr_TA || tcas_state.initial_ra_vs -
+		    oacf->vvel > LEVEL_VVEL_THRESH))) {
 			dbg_log(tcas, 1, "bogie %p RA_THREAT(hint|%d)",
 			    oacf->acf_id, hint->level);
 			oacf->threat = hint->level;
@@ -988,17 +1050,16 @@ ra_compar(const void *ra_a, const void *ra_b)
 
 	/*
 	 * If neither achieves ALIM, we pick the one with the greatest
-	 * minimum separation from any contact. Apply a sense-reversing and
-	 * altitude-crossing penalty as applicable to discourage reversing/
-	 * crossing RAs.
+	 * minimum separation from any contact.
 	 */
 	if (!a->alim_achieved && !b->alim_achieved) {
-		if (a->min_sep == b->min_sep) {
+		double sep_a = MAX(a->min_sep, 0), sep_b = MAX(b->min_sep, 0);
+		if (sep_a == sep_b && a->min_sep >= 0 && b->min_sep >= 0) {
 			/*
-			 * If our minimum seps are equal, that means most likely
-			 * we have too little time to perform the full VS
-			 * correction maneuver. In that case try to pick the RA
-			 * that performs the greatest VS change - maximizing the
+			 * If our minimum seps are equal, that means we have
+			 * too little time to perform the full VS correction
+			 * maneuver. In that case try to pick the RA that
+			 * performs the greatest VS change - maximizing the
 			 * chance the pilot will react faster than our
 			 * pessimistic estimate and pull us away hard.
 			 */
@@ -1007,7 +1068,7 @@ ra_compar(const void *ra_a, const void *ra_b)
 			else
 				return (1);
 		}
-		if (a->min_sep > b->min_sep)
+		if (sep_a > sep_b)
 			return (-1);
 		else
 			return (1);
@@ -1139,8 +1200,8 @@ compute_separation(const tcas_acf_t *my_acf, cpa_t *cpa,
  * the weakening action - it's already fine.
  * Returns the actual RA message which should be played, or RA_MSG_NONE.
  */
-static tcas_RA_msg_t
-RA_msg_sequence_check(tcas_RA_msg_t prev_msg, tcas_RA_msg_t next_msg)
+static tcas_msg_t
+RA_msg_sequence_check(tcas_msg_t prev_msg, tcas_msg_t next_msg)
 {
 	/* Prevent repeating the same RA */
 	if (prev_msg == next_msg)
@@ -1170,13 +1231,17 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 
 	for (int i = 0; i < NUM_RA_INFOS; i++) {
 		const tcas_RA_info_t *ri = &RA_info[i];
-		tcas_RA_msg_t prev_msg = (prev_ra != NULL ?
+		double agl_at_cpa = my_acf->agl - (my_acf->cur_pos.elev -
+		    ((cpa_t *)avl_last(cpas))->pos_a.z);
+		tcas_msg_t prev_msg = (prev_ra != NULL ?
 		    prev_ra->info->msg : -1);
 		tcas_RA_sense_t prev_sense = (prev_ra != NULL ?
 		    prev_ra->info->sense : RA_SENSE_LEVEL_OFF);
 		bool_t reversal = (prev_sense != RA_SENSE_LEVEL_OFF &&
 		    ri->sense != RA_SENSE_LEVEL_OFF && prev_sense != ri->sense);
-		tcas_RA_msg_t msg;
+		tcas_RA_type_t prev_type = (prev_ra != NULL ?
+		    prev_ra->info->type : -1);
+		tcas_msg_t msg;
 		double penalty = 0;
 
 		ASSERT3U(ri->msg, >=, 0);
@@ -1260,10 +1325,10 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 		    (msg == RA_MSG_CLB || msg == RA_MSG_CLB_CROSS ||
 		    msg == RA_MSG_CLB_MORE || msg == RA_MSG_CLB_NOW)) ||
 		    /* 2: Inhibit INCREASE DESCENT RAs below 1550ft AGL. */
-		    (my_acf->agl < INHIBIT_INC_DESC_RA &&
+		    (my_acf->agl < INHIBIT_INC_DES_AGL &&
 		    msg == RA_MSG_DES_MORE) ||
 		    /* 3: Inhibit all DESCEND RAs below 1100ft AGL. */
-		    (my_acf->agl < INHIBIT_INC_DESC_RA &&
+		    (my_acf->agl < INHIBIT_DES_AGL &&
 		    (msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS ||
 		    msg == RA_MSG_DES_MORE || msg == RA_MSG_DES_NOW)) ||
 		    /*
@@ -1273,9 +1338,12 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 		     *    to either LEVEL OFF or perform a sense reversal.
 		     */
 		    (prev_msg == RA_MSG_CLB_MORE && (msg == RA_MSG_CLB ||
-		    msg == RA_MSG_CLB_CROSS)) ||
+		    msg == RA_MSG_CLB_CROSS) && agl_at_cpa > INHIBIT_DES_AGL) ||
 		    (prev_msg == RA_MSG_DES_MORE && (msg == RA_MSG_DES ||
 		    msg == RA_MSG_DES_CROSS)) ||
+		    ((msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS) &&
+		    agl_at_cpa < INHIBIT_DES_AGL) || (msg == RA_MSG_DES_MORE &&
+		    agl_at_cpa < INHIBIT_INC_DES_AGL) ||
 		    /*
 		     * 5: Don't say CLIMB/DES MORE if previously we weren't
 		     *    climbing/descending.
@@ -1286,7 +1354,14 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 		     * 7: Follow the RA's crossing restriction.
 		     */
 		    (ri->cross == RA_CROSS_REQ && !ra->crossing) ||
-		    (ri->cross == RA_CROSS_REJ && ra->crossing)) {
+		    (ri->cross == RA_CROSS_REJ && ra->crossing) ||
+		    /*
+		     * 8: Avoid issuing a LEVEL OFF RA in response to a
+		     *    preventive RA (MONITOR VS). LEVEL OFF is only
+		     *    allowed in response to a corrective RA.
+		     */
+		    (ri->msg == RA_MSG_LEVEL_OFF &&
+		    prev_type == RA_TYPE_PREVENTIVE)) {
 			free(ra);
 			continue;
 		}
@@ -1347,7 +1422,6 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 	    acf = AVL_NEXT(other_acf, acf)) {
 		assign_threat_level(my_acf->cur_pos_3d, acf, sl, RA_hints,
 		    tcas_state.filter);
-		ops->update_threat(ops->handle, acf->acf_id, acf->threat);
 		TA_found |= (acf->threat == TA_THREAT);
 		RA_prev_found |= (acf->threat == RA_THREAT_PREV);
 		RA_corr_found |= (acf->threat == RA_THREAT_CORR);
@@ -1389,9 +1463,16 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		}
 
 		if (ra != NULL) {
+			if (ops->update_RA_prediction) {
+				ops->update_RA_prediction(ops->handle,
+				    ra->info->msg, ra->info->type,
+				    ra->info->sense, ra->crossing,
+				    ra->reversal, ra->min_sep);
+			}
 			if (now - tcas_state.change_t >= STATE_CHG_DELAY) {
-				tcas_RA_msg_t prev_msg = -1;
-				tcas_RA_msg_t msg;
+				tcas_msg_t prev_msg = -1;
+				tcas_msg_t msg;
+				const tcas_RA_info_t *ri = ra->info;
 				double min_green = 0, max_green = 0;
 				if (tcas_state.ra != NULL) {
 					prev_msg = tcas_state.ra->info->msg;
@@ -1402,13 +1483,6 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 					    my_acf->vvel;
 				}
 				tcas_state.ra = ra;
-				if (ra->info->type == RA_TYPE_CORRECTIVE) {
-					min_green = ra->info->vs.out.min;
-					max_green = ra->info->vs.out.max;
-				}
-				ops->update_RA(ops->handle, min_green,
-				    max_green, ra->info->vs.rej.min,
-				    ra->info->vs.rej.max);
 				tcas_state.change_t = now;
 				tcas_state.adv_state = ADV_STATE_RA;
 				/* Filter out pointless annunciations */
@@ -1418,6 +1492,21 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				if ((int)msg != -1 &&
 				    my_acf->agl > INHIBIT_AUDIO) {
 					xtcas_play_msg(msg);
+				}
+				if (ra->info->type == RA_TYPE_CORRECTIVE) {
+					min_green = ra->info->vs.out.min;
+					max_green = ra->info->vs.out.max;
+				}
+				if (ops->update_RA != NULL) {
+					ops->update_RA(ops->handle,
+					    ADV_STATE_RA, msg, ri->type,
+					    ri->sense, ra->crossing,
+					    ra->reversal, ra->min_sep,
+					    min_green, max_green,
+					    ra->info->vs.red_lo.min,
+					    ra->info->vs.red_lo.max,
+					    ra->info->vs.red_hi.min,
+					    ra->info->vs.red_hi.max);
 				}
 			} else {
 				free(ra);
@@ -1439,9 +1528,13 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				xtcas_play_msg(RA_MSG_TFC);
 			free(tcas_state.ra);
 			tcas_state.ra = NULL;
-			ops->update_RA(ops->handle, 0, 0, 0, 0);
 			tcas_state.initial_ra_vs = NAN;
 			tcas_state.adv_state = ADV_STATE_TA;
+			if (ops->update_RA != NULL) {
+				ops->update_RA(ops->handle, ADV_STATE_TA,
+				    RA_MSG_TFC, -1, -1, B_FALSE, B_FALSE,
+				    0, 0, 0, 0, 0, 0, 0);
+			}
 		}
 	} else if (tcas_state.adv_state != ADV_STATE_NONE &&
 	    now - tcas_state.change_t >= STATE_CHG_DELAY) {
@@ -1453,7 +1546,11 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 			xtcas_play_msg(RA_MSG_CLEAR);
 		}
 		free(tcas_state.ra);
-		ops->update_RA(ops->handle, 0, 0, 0, 0);
+		if (ops->update_RA != NULL) {
+			ops->update_RA(ops->handle, ADV_STATE_NONE,
+			    RA_MSG_CLEAR, -1, -1, B_FALSE, B_FALSE,
+			    0, 0, 0, 0, 0, 0, 0);
+		}
 		tcas_state.ra = NULL;
 		tcas_state.initial_ra_vs = NAN;
 		tcas_state.adv_state = ADV_STATE_NONE;
@@ -1479,6 +1576,21 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 	while ((avl_destroy_nodes(&RA_cpas, &cookie)) != NULL)
 		;
 	avl_destroy(&RA_cpas);
+
+	if (tcas_state.filter == TCAS_FILTER_THRT &&
+	    tcas_state.adv_state == ADV_STATE_NONE &&
+	    ops->delete_contact != NULL) {
+		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
+		    acf = AVL_NEXT(other_acf, acf)) {
+			ops->delete_contact(ops->handle, acf->acf_id);
+		}
+	} else if (ops->update_contact != NULL) {
+		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
+		    acf = AVL_NEXT(other_acf, acf)) {
+			ops->update_contact(ops->handle, acf->acf_id,
+			    acf->cur_pos, acf->trk, acf->vvel, acf->threat);
+		}
+	}
 }
 
 static void
@@ -1506,9 +1618,13 @@ main_loop(void *ignored)
 
 		dbg_log(tcas, 4, "main_loop: start (%.1f)", now_t);
 
-		/* If sim time hasn't advanced, we're paused, so wait */
-		if (!(last_t < now_t)) {
-			dbg_log(tcas, 3, "main_loop: time hasn't progressed");
+		/*
+		 * If sim time hasn't advanced, we're paused. Alternatively,
+		 * we might be in STBY mode.
+		 */
+		if (last_t >= now_t || tcas_state.mode == TCAS_MODE_STBY) {
+			dbg_log(tcas, 3, "main_loop: time hasn't progressed "
+			    "or STBY mode set");
 			cv_timedwait(&worker_cv, &worker_lock,
 			    now + WORKER_LOOP_INTVAL);
 			continue;
@@ -1562,7 +1678,8 @@ main_loop(void *ignored)
 		do {
 			cv_timedwait(&worker_cv, &worker_lock,
 			    now + WORKER_LOOP_INTVAL);
-		} while (microclock() < now + WORKER_LOOP_INTVAL);
+		} while (microclock() < now + WORKER_LOOP_INTVAL &&
+		    !worker_shutdown);
 	}
 	mutex_exit(&worker_lock);
 
@@ -1639,4 +1756,28 @@ xtcas_fini(void)
 	free(tcas_state.ra);
 
 	inited = B_FALSE;
+}
+
+void
+xtcas_set_mode(tcas_mode_t mode)
+{
+	tcas_state.mode = mode;
+}
+
+tcas_mode_t
+xtcas_get_mode(void)
+{
+	return (tcas_state.mode);
+}
+
+void
+xtcas_set_filter(tcas_filter_t filter)
+{
+	tcas_state.filter = filter;
+}
+
+tcas_filter_t
+xtcas_get_filter(void)
+{
+	return (tcas_state.filter);
 }

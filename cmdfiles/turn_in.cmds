@@ -1,0 +1,14 @@
+scaleh 125
+scalev 280
+
+acf		# our aircraft
+    pos 0 0 5000
+    trk 0
+    gs 80
+    auto
+
+acf		# intruder 1
+    pos 1600 1800 5000
+    trk 0
+    gs 80
+    man 30 turn -6

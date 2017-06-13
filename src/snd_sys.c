@@ -52,7 +52,7 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 
 static bool_t inited = B_FALSE;
 static bool_t view_is_ext = B_TRUE;
-static tcas_RA_msg_t cur_msg = -1;
+static tcas_msg_t cur_msg = -1;
 static sound_on_t sound_on = NULL;
 
 static void
@@ -63,7 +63,7 @@ set_sound_on(bool_t flag)
 }
 
 void
-xtcas_play_msg(tcas_RA_msg_t msg)
+xtcas_play_msg(tcas_msg_t msg)
 {
 	ASSERT3U(msg, <, RA_NUM_MSGS);
 #ifndef	TEST_STANDALONE_BUILD
@@ -77,7 +77,7 @@ static float
 snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
     int counter, void *refcon)
 {
-	tcas_RA_msg_t msg = cur_msg;
+	tcas_msg_t msg = cur_msg;
 
 	ASSERT(inited);
 	UNUSED(elapsed_since_last_call);
@@ -117,7 +117,7 @@ xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op)
 	if (!xtcas_openal_init())
 		return (B_FALSE);
 
-	for (tcas_RA_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
+	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		char *pathname;
 
 		ASSERT3P(voice_msgs[msg].wav, ==, NULL);
@@ -144,7 +144,7 @@ xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op)
 	return (B_TRUE);
 
 errout:
-	for (tcas_RA_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
+	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
 			xtcas_wav_free(voice_msgs[msg].wav);
 			voice_msgs[msg].wav = NULL;
@@ -167,7 +167,7 @@ xtcas_snd_sys_fini(void)
 	XPLMUnregisterFlightLoopCallback(snd_sched_cb, NULL);
 #endif
 
-	for (tcas_RA_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
+	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
 			xtcas_wav_free(voice_msgs[msg].wav);
 			voice_msgs[msg].wav = NULL;

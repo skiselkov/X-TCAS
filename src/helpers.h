@@ -140,6 +140,16 @@ is_valid_hdg(double hdg)
 	return (hdg >= 0.0 && hdg <= 360.0);
 }
 
+static inline double
+normalize_hdg(double hdg)
+{
+	while (hdg < 0)
+		hdg += 360;
+	while (hdg >= 360)
+		hdg -= 360;
+	return (hdg);
+}
+
 double rel_hdg(double hdg1, double hdg2);
 
 static inline bool_t

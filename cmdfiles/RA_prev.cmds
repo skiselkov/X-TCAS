@@ -1,0 +1,14 @@
+acf		# our aircraft
+    pos 0 0 470
+    trk 0
+    gs 80
+    auto
+
+acf		# intruder
+    pos 3500 3500 620
+    trk 270
+    gs 80
+
+    man 23
+    man 6.5
+	clb -2.5

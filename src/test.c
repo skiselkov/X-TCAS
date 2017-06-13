@@ -68,23 +68,41 @@ static double		refrot = 0;
 static double		gnd_elev = 0;
 static double		scaleh = 100;
 static double		scalev = 200;
-static double		min_green = 0, max_green = 0, min_red = 0, max_red = 0;
+static double		RA_min_green = 0, RA_max_green = 0;
+static double		RA_min_red_lo = 0, RA_max_red_lo = 0;
+static double		RA_min_red_hi = 0, RA_max_red_hi = 0;
 static double		RA_start = 0;
 static int		RA_counter = 0;
+static double		RA_tgt = 0;
 static double		reaction_fact = 1.0;
+static tcas_msg_t	RA_msg = -1u;
+static tcas_adv_t	RA_adv = ADV_STATE_NONE;
+static double		RA_min_sep_cpa = 0;
+static double		d_h_min = INFINITY;
+static double		d_v_min = INFINITY;
 
 static double get_time(void *handle);
 static void get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl);
 static void get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
-static void update_threat(void *handle, void *acf_id, tcas_threat_t level);
-static void update_RA(void *, double, double, double, double);
+static void update_contact(void *handle, void *acf_id, geo_pos3_t pos,
+    double trk, double vs, tcas_threat_t level);
+static void delete_contact(void *handle, void *acf_id);
+static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
+    tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
+    bool_t reversal, double min_sep_cpa, double min_green, double max_green,
+    double min_red_lo, double max_red_lo, double min_red_hi, double max_red_hi);
+static void update_RA_prediction(void *handle, tcas_msg_t msg,
+    tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
+    bool_t reversal, double min_sep_cpa);
 
 static sim_intf_ops_t test_ops = {
 	.get_time = get_time,
 	.get_my_acf_pos = get_my_acf_pos,
 	.get_oth_acf_pos = get_oth_acf_pos,
-	.update_threat = update_threat,
-	.update_RA = update_RA
+	.update_contact = update_contact,
+	.delete_contact = delete_contact,
+	.update_RA = update_RA,
+	.update_RA_prediction = update_RA_prediction
 };
 
 static bool_t
@@ -258,16 +276,16 @@ read_command_file(FILE *fp)
 				return (B_FALSE);
 			}
 		} else if (strcmp(cmd, "auto") == 0) {
-			maneuver_t *man;
-			if (acf == NULL || acf->id != 0 ||
-			    (man = list_tail(&acf->maneuvers)) == NULL) {
+			maneuver_t *man = calloc(1, sizeof (*man));
+			if (acf == NULL || acf->id != 0) {
 				fprintf(stderr, "Command file syntax error: "
-				    "\"auto\" must be preceded by \"man\" "
+				    "\"auto\" must be preceded by \"acf\" "
 				    "and may only be used for own "
 				    "(non-intruder) aircraft.\n");
 				return (B_FALSE);
 			}
 			man->automan = B_TRUE;
+			list_insert_tail(&acf->maneuvers, man);
 		} else {
 			fprintf(stderr, "Command file syntax error: "
 			    "unknown keyword \"%s\"\n", cmd);
@@ -313,31 +331,13 @@ step_acf(acf_t *acf, uint64_t now, uint64_t step)
 				if (acf->vs != 0) {
 					d_vs = vs2tgt(acf->vs, 0, d_vs_man);
 					if (fabs(d_vs) > acf->vs)
-						d_vs /= 4;
+						d_vs /= 2;
 				}
 				break;
 			}
 			if (USEC2SEC(now) < RA_start + delay)
 				break;
-			if (min_green != max_green) {
-				if (fabs(acf->vs - min_green) <
-				    fabs(acf->vs - max_green)) {
-					d_vs = vs2tgt(acf->vs, min_green,
-					    d_vs_man);
-				} else {
-					d_vs = vs2tgt(acf->vs, max_green,
-					    d_vs_man);
-				}
-			} else {
-				if (fabs(acf->vs - min_red) <
-				    fabs(acf->vs - max_red)) {
-					d_vs = vs2tgt(acf->vs, min_red,
-					    d_vs_man);
-				} else {
-					d_vs = vs2tgt(acf->vs, max_red,
-					    d_vs_man);
-				}
-			}
+			d_vs = vs2tgt(acf->vs, RA_tgt, d_vs_man);
 			break;
 		} else {
 			/* maneuver is active */
@@ -359,6 +359,14 @@ step_acf(acf_t *acf, uint64_t now, uint64_t step)
 	acf->pos.x += dir.x;
 	acf->pos.y += dir.y;
 	acf->pos.z += acf->vs * step_s;
+
+	if (acf->threat_level >= RA_THREAT_PREV) {
+		double d_h = vect2_abs(vect2_sub(VECT3_TO_VECT2(acf->pos),
+		    VECT3_TO_VECT2(my_acf.pos)));
+		d_h_min = MIN(d_h_min, d_h);
+		if (d_h < 30)
+			d_v_min = MIN(d_v_min, ABS(my_acf.pos.z - acf->pos.z));
+	}
 }
 
 static void
@@ -371,6 +379,7 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	char clb_symbol = ' ';
 	char *acf_symbol;
 	int color;
+	double trk = normalize_hdg(acf->trk - my_trk);
 
 	switch (acf->threat_level) {
 	case OTH_THREAT:
@@ -385,9 +394,14 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 		acf_symbol = "O";
 		color = 2;
 		break;
-	default:
+	case RA_THREAT_PREV:
+	case RA_THREAT_CORR:
 		acf_symbol = "X";
 		color = 3;
+		break;
+	default:
+		acf_symbol = ".";
+		color = 0;
 		break;
 	}
 
@@ -399,7 +413,7 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	xy = vect2_rot(xy, -my_trk);
 	x = cx - xy.x / scaleh;
 	y = cy + xy.y / scalev;
-	if (x < 0 || x + 5 >= maxx || y < 0 || y >= maxy)
+	if (x - 1 < 0 || x + 6 >= maxx || y - 1 < 0 || y + 2 >= maxy)
 		return;
 
 	if (color > 0)
@@ -408,6 +422,31 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	printw("%s %+04d%c", acf_symbol, z_rel / 10, clb_symbol);
 	move(y + 1, x + 3);
 	printw("%+03.0f", acf->vs);
+	if (trk >= 337.5 || trk < 22.5) {
+		move(y - 1, x);
+		printw("|");
+	} else if (trk >= 22.5 && trk < 67.5) {
+		move(y - 1, x + 1);
+		printw("/");
+	} else if (trk >= 67.5 && trk < 112.5) {
+		move(y, x + 1);
+		printw("-");
+	} else if (trk >= 112.5 && trk < 157.5) {
+		move(y + 1, x + 1);
+		printw("\\");
+	} else if (trk >= 157.5 && trk < 202.5) {
+		move(y + 1, x);
+		printw("|");
+	} else if (trk >= 202.5 && trk < 247.5) {
+		move(y + 1, x - 1);
+		printw("/");
+	} else if (trk >= 247.5 && trk < 292.5) {
+		move(y, x - 1);
+		printw("-");
+	} else {
+		move(y - 1, x - 1);
+		printw("\\");
+	}
 	if (color > 0)
 		attroff(COLOR_PAIR(color));
 }
@@ -417,6 +456,8 @@ gui_display(WINDOW *win)
 {
 	int maxx = 80, maxy = 25;
 	char *buf;
+	tcas_mode_t mode;
+	tcas_filter_t filter;
 
 	getmaxyx(win, maxy, maxx);
 	buf = malloc(maxx);
@@ -427,11 +468,16 @@ gui_display(WINDOW *win)
 	}
 	free(buf);
 
+	int kx = maxx / (1000 / scaleh), ky = maxy / (1000 / scalev),
+	    scalestep = kx / 3;
+
+	move(0, 0);
+
 	/* draw the position dots 10km around the origin point */
-	for (int i = (int)my_acf.pos.x / 1000 - 5;
-	    i <= (int)my_acf.pos.x / 1000 + 5; i++) {
-		for (int j = (int)my_acf.pos.y / 1000 - 5;
-		    j <= (int)my_acf.pos.y / 1000 + 5; j++) {
+	for (int i = (int)my_acf.pos.x / 1000 - kx / 2;
+	    i <= (int)my_acf.pos.x / 1000 + kx / 2; i++) {
+		for (int j = (int)my_acf.pos.y / 1000 - ky / 2;
+		    j <= (int)my_acf.pos.y / 1000 + ky / 2; j++) {
 			vect2_t v = VECT2(i * 1000 - my_acf.pos.x,
 			    j * 1000 - my_acf.pos.y);
 			int x, y;
@@ -442,6 +488,14 @@ gui_display(WINDOW *win)
 				continue;
 			move(y, x);
 			printw(".");
+			if (i % scalestep == 0 && j % scalestep == 0) {
+				int n = snprintf(NULL, 0, "[%d,%d]", i, j);
+				if (x - n / 2 > 1 && x + n / 2 < maxx - 2 &&
+				    y + 1 <= maxy - 1) {
+					move(y + 1, x - n / 2);
+					printw("[%d,%d]", i, j);
+				}
+			}
 		}
 	}
 
@@ -502,10 +556,30 @@ gui_display(WINDOW *win)
 		printw("%+03.0f", my_acf.vs);
 	}
 
-	if (min_green != max_green) {
+	if (RA_min_red_lo != RA_max_red_lo) {
+		attron(COLOR_PAIR(3));
+		for (int i = -20; i < 20; i++) {
+			if (RA_min_red_lo <= i && i <= RA_max_red_lo) {
+				move(maxy / 2 - i, maxx - 1);
+				printw("X");
+			}
+		}
+		attroff(COLOR_PAIR(3));
+	}
+	if (RA_min_red_hi != RA_max_red_hi) {
+		attron(COLOR_PAIR(3));
+		for (int i = -20; i < 20; i++) {
+			if (RA_min_red_hi <= i && i <= RA_max_red_hi) {
+				move(maxy / 2 - i, maxx - 1);
+				printw("X");
+			}
+		}
+		attroff(COLOR_PAIR(3));
+	}
+	if (RA_min_green != RA_max_green) {
 		attron(COLOR_PAIR(4));
 		for (int i = -20; i < 20; i++) {
-			if (min_green <= i && i <= max_green) {
+			if (RA_min_green <= i && i <= RA_max_green) {
 				move(maxy / 2 - i, maxx - 1);
 				printw("O");
 			}
@@ -513,16 +587,57 @@ gui_display(WINDOW *win)
 		attroff(COLOR_PAIR(4));
 	}
 
-	if (min_red != max_red) {
-		attron(COLOR_PAIR(3));
-		for (int i = -20; i < 20; i++) {
-			if (min_red <= i && i <= max_red) {
-				move(maxy / 2 - i, maxx - 1);
-				printw("X");
-			}
-		}
-		attroff(COLOR_PAIR(3));
+	move(0, 0);
+	switch (RA_adv) {
+	case ADV_STATE_TA:
+		attron(COLOR_PAIR(5));
+		break;
+	case ADV_STATE_RA:
+		attron(COLOR_PAIR(6));
+		break;
+	default:break;
 	}
+	printw("%s", xtcas_RA_msg2text(RA_msg));
+	switch (RA_adv) {
+	case ADV_STATE_TA:
+		attroff(COLOR_PAIR(5));
+		break;
+	case ADV_STATE_RA:
+		attroff(COLOR_PAIR(6));
+		break;
+	default:break;
+	}
+
+	move(1, 0);
+	printw("d_h_min: %.0fm (%.0fft)", isfinite(d_h_min) ? d_h_min : -1.0,
+	    isfinite(d_h_min) ? MET2FEET(d_h_min) : -1.0);
+	move(2, 0);
+	printw("d_v_min: %.0fm (%.0fft)", isfinite(d_v_min) ? d_v_min : -1.0,
+	    isfinite(d_v_min) ? MET2FEET(d_v_min) : -1.0);
+
+	move(3, 0);
+	printw("CPA:     %.0fm (%.0fft)", RA_min_sep_cpa,
+	    MET2FEET(RA_min_sep_cpa));
+
+	mode = xtcas_get_mode();
+	filter = xtcas_get_filter();
+#define	PAINT_MODE(y, x, str, condition) \
+	do { \
+		if (condition) \
+			attron(COLOR_PAIR(7)); \
+		move(y, x); \
+		printw(str); \
+		if (condition) \
+			attroff(COLOR_PAIR(7)); \
+	} while (0)
+	PAINT_MODE(0, maxx - 17, "ALL", filter == TCAS_FILTER_ALL);
+	PAINT_MODE(0, maxx - 13, "THRT", filter == TCAS_FILTER_THRT);
+	PAINT_MODE(0, maxx - 8, "ABV", filter == TCAS_FILTER_ABV);
+	PAINT_MODE(0, maxx - 4, "BLW", filter == TCAS_FILTER_BLW);
+
+	PAINT_MODE(1, maxx - 18, "STBY", mode == TCAS_MODE_STBY);
+	PAINT_MODE(1, maxx - 13, "TAONLY", mode == TCAS_MODE_TAONLY);
+	PAINT_MODE(1, maxx - 6, "TA/RA", mode == TCAS_MODE_TARA);
 
 	refresh();
 }
@@ -626,12 +741,54 @@ main(int argc, char **argv)
 		init_pair(2, COLOR_YELLOW, COLOR_BLACK);
 		init_pair(3, COLOR_RED, COLOR_BLACK);
 		init_pair(4, COLOR_GREEN, COLOR_BLACK);
+		init_pair(5, COLOR_BLACK, COLOR_YELLOW);
+		init_pair(6, COLOR_BLACK, COLOR_RED);
+		init_pair(7, COLOR_BLACK, COLOR_WHITE);
 	}
 
 	xtcas_init(&test_ops);
+	xtcas_set_mode(TCAS_MODE_TARA);
 
 	mutex_enter(&mtx);
-	while (getch() != 'q') {
+	for (;;) {
+		if (gfx) {
+			int c = getch();
+
+			switch (c) {
+			case 'q':
+			case 'Q':
+				goto out;
+			case 'u':
+			case 'U':
+				xtcas_set_filter(TCAS_FILTER_ALL);
+				break;
+			case 'i':
+			case 'I':
+				xtcas_set_filter(TCAS_FILTER_THRT);
+				break;
+			case 'o':
+			case 'O':
+				xtcas_set_filter(TCAS_FILTER_ABV);
+				break;
+			case 'p':
+			case 'P':
+				xtcas_set_filter(TCAS_FILTER_BLW);
+				break;
+			case 'j':
+			case 'J':
+				xtcas_set_mode(TCAS_MODE_STBY);
+				break;
+			case 'k':
+			case 'K':
+				xtcas_set_mode(TCAS_MODE_TAONLY);
+				break;
+			case 'l':
+			case 'L':
+				xtcas_set_mode(TCAS_MODE_TARA);
+				break;
+			}
+		}
+
 		step_acf(&my_acf, now, SIMSTEP);
 		for (acf_t *acf = list_head(&other_acf); acf != NULL;
 		    acf = list_next(&other_acf, acf))
@@ -645,6 +802,7 @@ main(int argc, char **argv)
 		cv_timedwait(&cv, &mtx, now + SIMSTEP);
 		now += SIMSTEP;
 	}
+out:
 	mutex_exit(&mtx);
 
 	endwin();
@@ -712,9 +870,13 @@ get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 }
 
 static void
-update_threat(void *handle, void *acf_id, tcas_threat_t level)
+update_contact(void *handle, void *acf_id, geo_pos3_t pos, double trk,
+    double vs, tcas_threat_t level)
 {
 	UNUSED(handle);
+	UNUSED(pos);
+	UNUSED(trk);
+	UNUSED(vs);
 	for (acf_t *acf = list_head(&other_acf); acf != NULL;
 	    acf = list_next(&other_acf, acf)) {
 		if (acf_id == (void *)(uintptr_t)acf->id) {
@@ -722,23 +884,76 @@ update_threat(void *handle, void *acf_id, tcas_threat_t level)
 			return;
 		}
 	}
-	abort();
+	VERIFY(0);
 }
 
 static void
-update_RA(void *handle, double min_g, double max_g, double min_r, double max_r)
+delete_contact(void *handle, void *acf_id)
 {
 	UNUSED(handle);
-	min_green = min_g;
-	max_green = max_g;
-	min_red = min_r;
-	max_red = max_r;
+	for (acf_t *acf = list_head(&other_acf); acf != NULL;
+	    acf = list_next(&other_acf, acf)) {
+		if (acf_id == (void *)(uintptr_t)acf->id) {
+			acf->threat_level = -1u;
+			return;
+		}
+	}
+	VERIFY(0);
+}
 
-	if (min_green == max_green && min_red == max_red) {
+static void
+update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg, tcas_RA_type_t type,
+    tcas_RA_sense_t sense, bool_t crossing, bool_t reversal, double min_sep_cpa,
+    double min_green, double max_green, double min_red_lo, double max_red_lo,
+    double min_red_hi, double max_red_hi)
+{
+	UNUSED(handle);
+	UNUSED(type);
+	UNUSED(sense);
+	UNUSED(crossing);
+	UNUSED(reversal);
+	UNUSED(min_sep_cpa);
+
+	RA_min_green = min_green;
+	RA_max_green = max_green;
+	RA_min_red_lo = min_red_lo;
+	RA_max_red_lo = max_red_lo;
+	RA_min_red_hi = min_red_hi;
+	RA_max_red_hi = max_red_hi;
+
+	RA_msg = msg;
+	RA_adv = adv;
+	if (adv == ADV_STATE_NONE) {
 		/* clear of conflict */
 		RA_counter = 0;
-	} else {
-		RA_start = get_time(NULL);
+		RA_tgt = 0;
+	} else if (adv == ADV_STATE_RA) {
+		if (fabs(my_acf.vs - RA_tgt) < 0.5 || RA_counter == 0 ||
+		    reversal)
+			RA_start = get_time(NULL);
 		RA_counter++;
+		if (min_green != max_green) {
+			RA_tgt = (fabs(my_acf.vs - min_green) < fabs(
+			    my_acf.vs - max_green)) ? min_green : max_green;
+		} else if (min_red_lo != max_red_lo) {
+			RA_tgt = (fabs(my_acf.vs - min_red_hi) < fabs(
+			    my_acf.vs - max_red_lo)) ? min_red_lo : max_red_lo;
+		} else {
+			RA_tgt = (fabs(my_acf.vs - min_red_hi) < fabs(
+			    my_acf.vs - max_red_hi)) ? min_red_hi : max_red_hi;
+		}
 	}
+}
+
+static void
+update_RA_prediction(void *handle, tcas_msg_t msg, tcas_RA_type_t type,
+    tcas_RA_sense_t sense, bool_t crossing, bool_t reversal, double min_sep_cpa)
+{
+	UNUSED(handle);
+	UNUSED(msg);
+	UNUSED(type);
+	UNUSED(sense);
+	UNUSED(crossing);
+	UNUSED(reversal);
+	RA_min_sep_cpa = min_sep_cpa;
 }

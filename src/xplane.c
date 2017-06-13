@@ -75,9 +75,13 @@ static void xp_get_oth_acf_pos(acf_pos_t **pos_p, size_t *num);
 static bool_t xp_view_is_external(void);
 
 static sim_intf_ops_t xp_intf_ops = {
+	.handle = NULL,
 	.get_time = xp_get_time,
 	.get_my_acf_pos = xp_get_my_acf_pos,
 	.get_oth_acf_pos = xp_get_oth_acf_pos
+	.update_threat = NULL,
+	.update_RA = NULL,
+	.update_RA_prediction = NULL
 };
 
 static int
