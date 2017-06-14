@@ -45,6 +45,7 @@ typedef struct {
 	double		d_vs;	/* rate-of-change in vertical speed (m/s^2) */
 	double		d_gs;	/* rate-of-change in ground speed (m/s^2) */
 	bool_t		automan;/* automatically maneuver in response to RAs */
+	double		auto_vs;
 	list_node_t	node;
 } maneuver_t;
 
@@ -316,6 +317,7 @@ step_acf(acf_t *acf, uint64_t now, uint64_t step)
 		if (man->s_t == 0) {
 			/* just started this maneuver */
 			man->s_t = now;
+			man->auto_vs = acf->vs;
 		}
 		if (man->s_t + SEC2USEC(man->d_t) <= now && !man->automan) {
 			/* maneuver has ended */
@@ -328,8 +330,9 @@ step_acf(acf_t *acf, uint64_t now, uint64_t step)
 
 			/* auto-maneuver our own aircraft */
 			if (RA_counter == 0) {
-				if (acf->vs != 0) {
-					d_vs = vs2tgt(acf->vs, 0, d_vs_man);
+				if (acf->vs != man->auto_vs) {
+					d_vs = vs2tgt(acf->vs, man->auto_vs,
+					    d_vs_man);
 					if (fabs(d_vs) > acf->vs)
 						d_vs /= 2;
 				}

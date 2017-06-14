@@ -39,7 +39,7 @@
 #define	LEVEL_VVEL_THRESH	FPM2MPS(300)	/* m/s */
 #define	D_VVEL_MAN_THRESH	FPM2MPS(200)	/* m/s^2 */
 #define	D_VVEL_MAN_TIME		FPM2MPS(6)	/* seconds */
-#define	NUM_RA_INFOS		25
+#define	NUM_RA_INFOS		26
 
 #define	WORKER_LOOP_INTVAL	SEC2USEC(1)	/* microseconds */
 #define	STATE_CHG_DELAY		SEC2USEC(4)	/* microseconds */
@@ -255,7 +255,7 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_LEVEL_OFF,
 	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
+	.vs.in.min = -FPM2MPS(-100), .vs.in.max = FPM2MPS(100),
 	.vs.out.min = FPM2MPS(-100), .vs.out.max = FPM2MPS(100),
 	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-100),
 	.vs.red_hi.min = FPM2MPS(100), .vs.red_hi.max = INF_VS
@@ -267,18 +267,27 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
 	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
+	.vs.out.min = FPM2MPS(-250), .vs.out.max = FPM2MPS(250),
+	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = -FPM2MPS(-250),
+	.vs.red_hi.min = FPM2MPS(250), .vs.red_hi.max = INF_VS,
+    },
+    {	/* LEVEL OFF */
+	.msg = RA_MSG_LEVEL_OFF, .rev_msg = RA_MSG_LEVEL_OFF,
+	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.vs.in.min = 0, .vs.in.max = INF_VS,
 	.vs.out.min = FPM2MPS(-300), .vs.out.max = 0,
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = -LEVEL_VVEL_THRESH,
+	.vs.red_lo.min = FPM2MPS(-300), .vs.red_lo.max = FPM2MPS(-300),
 	.vs.red_hi.min = 0, .vs.red_hi.max = INF_VS,
     },
     {	/* LEVEL OFF */
 	.msg = RA_MSG_LEVEL_OFF, .rev_msg = RA_MSG_LEVEL_OFF,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
+	.vs.in.min = -INF_VS, .vs.in.max = 0,
 	.vs.out.min = 0, .vs.out.max = FPM2MPS(300),
 	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = 0,
-	.vs.red_hi.min = LEVEL_VVEL_THRESH, .vs.red_hi.max = INF_VS
+	.vs.red_hi.min = FPM2MPS(300), .vs.red_hi.max = FPM2MPS(300)
     },
 
 /* Corrective climbing RAs */
@@ -1361,7 +1370,8 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 		     *    allowed in response to a corrective RA.
 		     */
 		    (ri->msg == RA_MSG_LEVEL_OFF &&
-		    prev_type == RA_TYPE_PREVENTIVE)) {
+		    prev_type == RA_TYPE_PREVENTIVE) ||
+		    (prev_only && !ra->alim_achieved)) {
 			free(ra);
 			continue;
 		}
@@ -1453,7 +1463,13 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		    (now - tcas_state.change_t) / 1000000.0);
 
 		ra = CAS_logic(my_acf, tcas_state.ra, &RA_cpas, sl,
-		    RA_prev_found && !RA_corr_found);
+		    /*
+		     * A preventive RA is only guaranteed to be found when
+		     * climbing/descending below the maximum preventive RA
+		     * vertical rate value.
+		     */
+		    RA_prev_found && !RA_corr_found &&
+		    ABS(my_acf->vvel) < FPM2MPS(2000));
 		/* On initial annunciation, we must ALWAYS issue an RA */
 		ASSERT(ra != NULL || tcas_state.ra != NULL);
 
