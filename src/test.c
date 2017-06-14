@@ -81,6 +81,8 @@ static tcas_adv_t	RA_adv = ADV_STATE_NONE;
 static double		RA_min_sep_cpa = 0;
 static double		d_h_min = INFINITY;
 static double		d_v_min = INFINITY;
+static bool_t		feet = B_FALSE;
+static bool_t		sound = B_TRUE;
 
 static double get_time(void *handle);
 static void get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl);
@@ -109,7 +111,7 @@ static sim_intf_ops_t test_ops = {
 static bool_t
 sound_on(void)
 {
-	return (B_TRUE);
+	return (sound);
 }
 
 static bool_t
@@ -380,6 +382,7 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	vect2_t xy = VECT2(my_pos.x - acf->pos.x, my_pos.y - acf->pos.y);
 	int z_rel = acf->pos.z - my_pos.z;
 	char clb_symbol = ' ';
+	char alt_symbol = ' ';
 	char *acf_symbol;
 	int color;
 	double trk = normalize_hdg(acf->trk - my_trk);
@@ -422,9 +425,26 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	if (color > 0)
 		attron(COLOR_PAIR(color));
 	move(y, x);
-	printw("%s %+04d%c", acf_symbol, z_rel / 10, clb_symbol);
-	move(y + 1, x + 3);
-	printw("%+03.0f", acf->vs);
+	if (feet) {
+		int alt = MET2FEET(z_rel) / 100;
+		if (alt > 0)
+			alt_symbol = '+';
+		else if (alt < 0)
+			alt_symbol = '-';
+		printw("%s %c%02d%c", acf_symbol, alt_symbol, ABS(alt),
+		    clb_symbol);
+	} else {
+		int alt = z_rel / 10;
+		if (alt > 0)
+			alt_symbol = '+';
+		else if (alt < 0)
+			alt_symbol = '-';
+		printw("%s %c%03d%c", acf_symbol, alt_symbol, ABS(alt),
+		    clb_symbol);
+	}
+	move(y + 1, x + 2);
+	if (ABS(acf->vs) >= 1)
+		printw("%+03.0f", feet ? (MPS2FPM(acf->vs) / 100) : acf->vs);
 	if (trk >= 337.5 || trk < 22.5) {
 		move(y - 1, x);
 		printw("|");
@@ -455,7 +475,7 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 }
 
 static void
-gui_display(WINDOW *win)
+draw_gui(WINDOW *win)
 {
 	int maxx = 80, maxy = 25;
 	char *buf;
@@ -528,7 +548,7 @@ gui_display(WINDOW *win)
 	move(maxy / 2 - 1, 0);
 	printw("+---+");
 	move(maxy / 2, 0);
-	printw("|%03.0f|", my_acf.gs);
+	printw("|%03.0f|", feet ? MPS2KT(my_acf.gs) : my_acf.gs);
 	move(maxy / 2 + 1, 0);
 	printw("+---+");
 
@@ -536,7 +556,7 @@ gui_display(WINDOW *win)
 	move(maxy / 2 - 1, maxx - 11);
 	printw("+-----+");
 	move(maxy / 2, maxx - 11);
-	printw("|%05.0f|", my_acf.pos.z);
+	printw("|%05.0f|", feet ? MET2FEET(my_acf.pos.z) : my_acf.pos.z);
 	move(maxy / 2 + 1, maxx - 11);
 	printw("+-----+");
 
@@ -556,7 +576,8 @@ gui_display(WINDOW *win)
 			}
 		}
 		move(maxy / 2 - (int)my_acf.vs, maxx - 4);
-		printw("%+03.0f", my_acf.vs);
+		printw("%+03.0f", feet ? (MPS2FPM(my_acf.vs) / 100) :
+		    my_acf.vs);
 	}
 
 	if (RA_min_red_lo != RA_max_red_lo) {
@@ -598,7 +619,9 @@ gui_display(WINDOW *win)
 	case ADV_STATE_RA:
 		attron(COLOR_PAIR(6));
 		break;
-	default:break;
+	default:
+		attron(COLOR_PAIR(1));
+		break;
 	}
 	printw("%s", xtcas_RA_msg2text(RA_msg));
 	switch (RA_adv) {
@@ -608,19 +631,21 @@ gui_display(WINDOW *win)
 	case ADV_STATE_RA:
 		attroff(COLOR_PAIR(6));
 		break;
-	default:break;
+	default:
+		attroff(COLOR_PAIR(1));
+		break;
 	}
 
 	move(1, 0);
-	printw("d_h_min: %.0fm (%.0fft)", isfinite(d_h_min) ? d_h_min : -1.0,
-	    isfinite(d_h_min) ? MET2FEET(d_h_min) : -1.0);
+	printw("d_h_min: %5.0f%s", isfinite(d_h_min) ? (feet ?
+	    MET2FEET(d_h_min) : d_h_min) : -1.0, feet ? "ft" : "m");
 	move(2, 0);
-	printw("d_v_min: %.0fm (%.0fft)", isfinite(d_v_min) ? d_v_min : -1.0,
-	    isfinite(d_v_min) ? MET2FEET(d_v_min) : -1.0);
+	printw("d_v_min: %5.0f%s", isfinite(d_v_min) ? (feet ?
+	    MET2FEET(d_v_min) : d_v_min) : -1.0, feet ? "ft" : "m");
 
 	move(3, 0);
-	printw("CPA:     %.0fm (%.0fft)", RA_min_sep_cpa,
-	    MET2FEET(RA_min_sep_cpa));
+	printw("CPA:     %5.0f%s", feet ? MET2FEET(RA_min_sep_cpa) :
+	    RA_min_sep_cpa, feet ? "ft" : "m");
 
 	mode = xtcas_get_mode();
 	filter = xtcas_get_filter();
@@ -633,14 +658,23 @@ gui_display(WINDOW *win)
 		if (condition) \
 			attroff(COLOR_PAIR(7)); \
 	} while (0)
-	PAINT_MODE(0, maxx - 17, "ALL", filter == TCAS_FILTER_ALL);
-	PAINT_MODE(0, maxx - 13, "THRT", filter == TCAS_FILTER_THRT);
-	PAINT_MODE(0, maxx - 8, "ABV", filter == TCAS_FILTER_ABV);
-	PAINT_MODE(0, maxx - 4, "BLW", filter == TCAS_FILTER_BLW);
+	move(0, maxx - 26);
+	printw("FILTER:");
+	PAINT_MODE(0, maxx - 18, "ALL", filter == TCAS_FILTER_ALL);
+	PAINT_MODE(0, maxx - 14, "THRT", filter == TCAS_FILTER_THRT);
+	PAINT_MODE(0, maxx - 9, "ABV", filter == TCAS_FILTER_ABV);
+	PAINT_MODE(0, maxx - 5, "BLW", filter == TCAS_FILTER_BLW);
 
+	move(1, maxx - 24);
+	printw("MODE:");
 	PAINT_MODE(1, maxx - 18, "STBY", mode == TCAS_MODE_STBY);
 	PAINT_MODE(1, maxx - 13, "TAONLY", mode == TCAS_MODE_TAONLY);
 	PAINT_MODE(1, maxx - 6, "TA/RA", mode == TCAS_MODE_TARA);
+
+	move(2, maxx - 25);
+	printw("SOUND:");
+	PAINT_MODE(2, maxx - 18, "ON", sound);
+	PAINT_MODE(2, maxx - 15, "OFF", !sound);
 
 	refresh();
 }
@@ -661,8 +695,14 @@ main(int argc, char **argv)
 
 	list_create(&other_acf, sizeof (acf_t), offsetof(acf_t, node));
 
-	while ((opt = getopt(argc, argv, "r:gdD:s:")) != -1) {
+	while ((opt = getopt(argc, argv, "Sfr:gdD:s:")) != -1) {
 		switch (opt) {
+		case 'S':
+			sound = B_FALSE;
+			break;
+		case 'f':
+			feet = B_TRUE;
+			break;
 		case 'r':
 			reaction_fact = atof(optarg);
 			break;
@@ -741,12 +781,12 @@ main(int argc, char **argv)
 		ASSERT(win != NULL);
 		start_color();
 		init_pair(1, COLOR_BLACK, COLOR_WHITE);
-		init_pair(2, COLOR_YELLOW, COLOR_BLACK);
-		init_pair(3, COLOR_RED, COLOR_BLACK);
+		init_pair(2, COLOR_BLACK, COLOR_YELLOW);
+		init_pair(3, COLOR_BLACK, COLOR_RED);
 		init_pair(4, COLOR_GREEN, COLOR_BLACK);
 		init_pair(5, COLOR_BLACK, COLOR_YELLOW);
 		init_pair(6, COLOR_BLACK, COLOR_RED);
-		init_pair(7, COLOR_BLACK, COLOR_WHITE);
+		init_pair(7, COLOR_BLACK, COLOR_GREEN);
 	}
 
 	xtcas_init(&test_ops);
@@ -789,6 +829,10 @@ main(int argc, char **argv)
 			case 'L':
 				xtcas_set_mode(TCAS_MODE_TARA);
 				break;
+			case 's':
+			case 'S':
+				sound = !sound;
+				break;
 			}
 		}
 
@@ -800,7 +844,7 @@ main(int argc, char **argv)
 		xtcas_run();
 
 		if (gfx)
-			gui_display(win);
+			draw_gui(win);
 
 		cv_timedwait(&cv, &mtx, now + SIMSTEP);
 		now += SIMSTEP;
@@ -935,9 +979,15 @@ update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg, tcas_RA_type_t type,
 		    reversal)
 			RA_start = get_time(NULL);
 		RA_counter++;
+
 		if (min_green != max_green) {
-			RA_tgt = (fabs(my_acf.vs - min_green) < fabs(
-			    my_acf.vs - max_green)) ? min_green : max_green;
+			if (min_red_lo != max_red_lo &&
+			    min_red_hi != max_red_hi) {
+				RA_tgt = (max_green + min_green) / 2;
+			} else {
+				RA_tgt = (min_red_lo != max_red_lo ?
+				    min_green : max_green);
+			}
 		} else if (min_red_lo != max_red_lo) {
 			RA_tgt = (fabs(my_acf.vs - min_red_hi) < fabs(
 			    my_acf.vs - max_red_lo)) ? min_red_lo : max_red_lo;

@@ -20,7 +20,10 @@
 
 #ifndef	TEST_STANDALONE_BUILD
 #include <XPLMProcessing.h>
-#endif
+#else	/* TEST_STANDALONE_BUILD */
+#include "thread.h"
+#include "time.h"
+#endif	/* TEST_STANDALONE_BUILD */
 
 #include "assert.h"
 #include "list.h"
@@ -50,16 +53,23 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 	{ .file = "tfc.wav",		.wav = NULL }
 };
 
-static bool_t inited = B_FALSE;
-static bool_t view_is_ext = B_TRUE;
-static tcas_msg_t cur_msg = -1;
-static sound_on_t sound_on = NULL;
+static bool_t		inited = B_FALSE;
+static bool_t		sound_is_on = B_TRUE;
+static tcas_msg_t	cur_msg = -1;
+static sound_on_t	sound_on = NULL;
+
+#ifdef	TEST_STANDALONE_BUILD
+static bool_t		worker_shutdown = B_FALSE;
+static mutex_t		worker_lock;
+static condvar_t	worker_cv;
+static thread_t		worker_thr;
+#endif	/* TEST_STANDALONE_BUILD */
 
 static void
 set_sound_on(bool_t flag)
 {
 	for (int i = 0; i < RA_NUM_MSGS; i++)
-		xtcas_wav_set_gain(voice_msgs[i].wav, flag ? 1.0 : 0);
+		xtcas_wav_set_gain(voice_msgs[i].wav, flag ? 1.0 : 0.0);
 }
 
 void
@@ -93,18 +103,45 @@ snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 	 * Make sure our messages are only audible when we're inside
 	 * the cockpit and AC power is on.
 	 */
-	if (view_is_ext && !sound_on()) {
-		set_sound_on(B_TRUE);
-		view_is_ext = B_FALSE;
-	} else if (!view_is_ext && sound_on()) {
+	if (sound_is_on && !sound_on()) {
 		set_sound_on(B_FALSE);
-		view_is_ext = B_TRUE;
+		sound_is_on = B_FALSE;
+	} else if (!sound_is_on && sound_on()) {
+		set_sound_on(B_TRUE);
+		sound_is_on = B_TRUE;
 	}
 
+#ifndef	TEST_STANDALONE_BUILD
 	(void) xtcas_wav_play(voice_msgs[msg].wav);
+#endif
 
 	return (-1.0);
 }
+
+#ifdef	TEST_STANDALONE_BUILD
+
+static void
+snd_sched_loop(void)
+{
+	mutex_enter(&worker_lock);
+	while (!worker_shutdown) {
+		snd_sched_cb(0, 0, 0, NULL);
+		cv_timedwait(&worker_cv, &worker_lock, microclock() + 50000);
+	}
+	mutex_exit(&worker_lock);
+}
+
+void
+shutdown_worker(void)
+{
+	mutex_enter(&worker_lock);
+	worker_shutdown = B_TRUE;
+	cv_broadcast(&worker_cv);
+	mutex_exit(&worker_lock);
+	thread_join(&worker_thr);
+}
+
+#endif	/* TEST_STANDALONE_BUILD */
 
 bool_t
 xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op)
@@ -136,7 +173,9 @@ xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op)
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMRegisterFlightLoopCallback(snd_sched_cb, -1.0, NULL);
 #else	/* !TEST_STANDALONE_BUILD */
-	(void) snd_sched_cb;
+	mutex_init(&worker_lock);
+	cv_init(&worker_cv);
+	VERIFY(thread_create(&worker_thr, snd_sched_loop, NULL));
 #endif	/* !TEST_STANDALONE_BUILD */
 
 	inited = B_TRUE;
@@ -165,7 +204,9 @@ xtcas_snd_sys_fini(void)
 
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMUnregisterFlightLoopCallback(snd_sched_cb, NULL);
-#endif
+#else	/* TEST_STANDALONE_BUILD */
+	shutdown_worker();
+#endif	/* TEST_STANDALONE_BUILD */
 
 	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
