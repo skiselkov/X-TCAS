@@ -133,7 +133,37 @@ read_command_file(FILE *fp)
 			continue;
 		}
 
-		if (strcmp(cmd, "reflat") == 0) {
+		if (strcmp(cmd, "filter") == 0) {
+			fscanf(fp, "%63s", cmd);
+			if (strcasecmp(cmd, "all") == 0) {
+				xtcas_set_filter(TCAS_FILTER_ALL);
+			} else if (strcasecmp(cmd, "thrt") == 0) {
+				xtcas_set_filter(TCAS_FILTER_THRT);
+			} else if (strcasecmp(cmd, "abv") == 0) {
+				xtcas_set_filter(TCAS_FILTER_ABV);
+			} else if (strcasecmp(cmd, "blw") == 0) {
+				xtcas_set_filter(TCAS_FILTER_BLW);
+			} else {
+				fprintf(stderr, "Command file syntax error: "
+				    "\"filter\" must be followed by one of "
+				    "ALL, THRT, ABV or BLW\n");
+				return (B_FALSE);
+			}
+		} else if (strcmp(cmd, "mode") == 0) {
+			fscanf(fp, "%63s", cmd);
+			if (strcasecmp(cmd, "stby") == 0) {
+				xtcas_set_mode(TCAS_MODE_STBY);
+			} else if (strcasecmp(cmd, "taonly") == 0) {
+				xtcas_set_mode(TCAS_MODE_TAONLY);
+			} else if (strcasecmp(cmd, "tara") == 0) {
+				xtcas_set_mode(TCAS_MODE_TARA);
+			} else {
+				fprintf(stderr, "Command file syntax error: "
+				    "\"mode\" must be followed by one of "
+				    "STBY, TAONLY, TARA\n");
+				return (B_FALSE);
+			}
+		} else if (strcmp(cmd, "reflat") == 0) {
 			if (fscanf(fp, "%lf", &refpt.lat) != 1) {
 				fprintf(stderr, "Command file syntax error: "
 				    "expected a number following \"reflat\"\n");
@@ -753,6 +783,9 @@ main(int argc, char **argv)
 		return (1);
 	}
 
+	xtcas_init(&test_ops);
+	xtcas_set_mode(TCAS_MODE_TARA);
+
 	cmdfile = fopen(argv[0], "r");
 	if (cmdfile == NULL) {
 		perror("Cannot open command file");
@@ -788,9 +821,6 @@ main(int argc, char **argv)
 		init_pair(6, COLOR_BLACK, COLOR_RED);
 		init_pair(7, COLOR_BLACK, COLOR_GREEN);
 	}
-
-	xtcas_init(&test_ops);
-	xtcas_set_mode(TCAS_MODE_TARA);
 
 	mutex_enter(&mtx);
 	for (;;) {
