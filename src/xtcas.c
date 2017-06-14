@@ -41,7 +41,8 @@
 #define	D_VVEL_MAN_TIME		FPM2MPS(6)	/* seconds */
 #define	NUM_RA_INFOS		26
 
-#define	WORKER_LOOP_INTVAL	SEC2USEC(1)	/* microseconds */
+#define	WORKER_LOOP_INTVAL	1		/* seconds */
+#define	WORKER_LOOP_INTVAL_US	SEC2USEC(WORKER_LOOP_INTVAL)
 #define	STATE_CHG_DELAY		SEC2USEC(4)	/* microseconds */
 #define	EARTH_G			9.81		/* m.s^-2 */
 #define	INITIAL_RA_D_VVEL	(EARTH_G / 4)	/* 1/4 g */
@@ -1753,7 +1754,7 @@ main_loop(void *ignored)
 			dbg_log(tcas, 3, "main_loop: time hasn't progressed "
 			    "or STBY mode set");
 			cv_timedwait(&worker_cv, &worker_lock,
-			    now + WORKER_LOOP_INTVAL);
+			    now + WORKER_LOOP_INTVAL_US);
 			continue;
 		}
 		last_t = now_t;
@@ -1810,8 +1811,8 @@ main_loop(void *ignored)
 		 */
 		do {
 			cv_timedwait(&worker_cv, &worker_lock,
-			    now + WORKER_LOOP_INTVAL);
-		} while (microclock() < now + WORKER_LOOP_INTVAL &&
+			    now + WORKER_LOOP_INTVAL_US);
+		} while (microclock() < now + WORKER_LOOP_INTVAL_US &&
 		    !worker_shutdown);
 	}
 	mutex_exit(&worker_lock);
@@ -1829,7 +1830,7 @@ xtcas_run(void)
 	ASSERT(inited);
 
 	/* protection in case the sim is paused */
-	if (t <= last_collect_t + 1)
+	if (t <= last_collect_t + WORKER_LOOP_INTVAL)
 		return;
 	last_collect_t = t;
 

@@ -49,7 +49,7 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 	{ .file = "monitor_vs.wav",	.wav = NULL },
 	{ .file = "maint_vs.wav",	.wav = NULL },
 	{ .file = "maint_vs_cross.wav",	.wav = NULL },
-	{ .file = "adjust_vs.wav",	.wav = NULL },
+	{ .file = "level_off.wav",	.wav = NULL },
 	{ .file = "tfc.wav",		.wav = NULL }
 };
 
