@@ -330,7 +330,7 @@ XPluginStart(char *name, char *sig, char *desc)
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
 	sim_intf_init();
 	snd_dir = mkpathname(plugindir, "data", "male1", NULL);
-	if (!xtcas_snd_sys_init(plugindir, &xp_snd_ops)) {
+	if (!xtcas_snd_sys_init(plugindir)) {
 		free(snd_dir);
 		return (0);
 	}
