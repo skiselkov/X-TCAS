@@ -55,7 +55,7 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 
 static bool_t		inited = B_FALSE;
 static tcas_msg_t	cur_msg = -1;
-static double		cur_volume = 0.0;
+static double		cur_volume = 1.0;
 
 bool_t
 xtcas_snd_sys_init(const char *snd_dir)
