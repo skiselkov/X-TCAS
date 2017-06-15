@@ -28,17 +28,11 @@
 extern "C" {
 #endif
 
-typedef struct {
-	/* Interface handle - for use by the interface provider */
-	void	*handle;
-	bool_t	(*sound_is_on)(void *handle);
-} snd_intf_ops_t;
+bool_t xtcas_snd_sys_init(const char *snd_dir);
+void xtcas_snd_sys_fini(void);
 
 void xtcas_play_msg(tcas_msg_t msg);
-
-bool_t xtcas_snd_sys_init(const char *snd_dir, const snd_intf_ops_t *intf_ops);
-void xtcas_snd_sys_run(void);
-void xtcas_snd_sys_fini(void);
+void xtcas_snd_sys_run(double volume);
 
 #ifdef	__cplusplus
 }

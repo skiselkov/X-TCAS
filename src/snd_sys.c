@@ -53,49 +53,12 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 	{ .file = "tfc.wav",		.wav = NULL }
 };
 
-static bool_t			inited = B_FALSE;
-static bool_t			sound_is_on = B_TRUE;
-static tcas_msg_t		cur_msg = -1;
-static const snd_intf_ops_t	*ops = NULL;
-
-static void
-set_sound_on(bool_t flag)
-{
-	for (int i = 0; i < RA_NUM_MSGS; i++)
-		xtcas_wav_set_gain(voice_msgs[i].wav, flag ? 1.0 : 0.0);
-}
-
-void
-xtcas_snd_sys_run(void)
-{
-	tcas_msg_t msg = cur_msg;
-
-	ASSERT(inited);
-
-	if ((int)msg != -1)
-		return;
-	cur_msg = -1;
-	ASSERT3U(msg, <, RA_NUM_MSGS);
-
-	/*
-	 * Make sure our messages are only audible when we're inside
-	 * the cockpit and AC power is on.
-	 */
-	if (sound_is_on && (ops->sound_is_on != NULL &&
-	    !ops->sound_is_on(ops->handle))) {
-		set_sound_on(B_FALSE);
-		sound_is_on = B_FALSE;
-	} else if (!sound_is_on && (ops->sound_is_on != NULL &&
-	    ops->sound_is_on(ops->handle))) {
-		set_sound_on(B_TRUE);
-		sound_is_on = B_TRUE;
-	}
-
-	(void) xtcas_wav_play(voice_msgs[msg].wav);
-}
+static bool_t		inited = B_FALSE;
+static tcas_msg_t	cur_msg = -1;
+static double		cur_volume = 0.0;
 
 bool_t
-xtcas_snd_sys_init(const char *snd_dir, const snd_intf_ops_t *intf_ops)
+xtcas_snd_sys_init(const char *snd_dir)
 {
 	dbg_log(snd, 1, "snd_sys_init");
 
@@ -119,9 +82,6 @@ xtcas_snd_sys_init(const char *snd_dir, const snd_intf_ops_t *intf_ops)
 		xtcas_wav_set_gain(voice_msgs[msg].wav, 1.0);
 		free(pathname);
 	}
-
-	VERIFY(intf_ops != NULL);
-	ops = intf_ops;
 
 	inited = B_TRUE;
 
@@ -166,4 +126,25 @@ xtcas_play_msg(tcas_msg_t msg)
 	ASSERT(inited);
 	ASSERT3U(msg, <, RA_NUM_MSGS);
 	cur_msg = msg;
+}
+
+void
+xtcas_snd_sys_run(double volume)
+{
+	tcas_msg_t msg;
+
+	ASSERT(inited);
+
+	if (cur_volume != volume) {
+		cur_volume = volume;
+		for (int i = 0; i < RA_NUM_MSGS; i++)
+			xtcas_wav_set_gain(voice_msgs[i].wav, volume);
+	}
+
+	msg = cur_msg;
+	if ((int)msg != -1) {
+		cur_msg = -1u;
+		ASSERT3U(msg, <, RA_NUM_MSGS);
+		(void) xtcas_wav_play(voice_msgs[msg].wav);
+	}
 }

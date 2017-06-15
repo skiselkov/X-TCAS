@@ -98,7 +98,6 @@ static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
 static void update_RA_prediction(void *handle, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
     bool_t reversal, double min_sep_cpa);
-static bool_t sound_is_on(void *handle);
 
 static sim_intf_ops_t test_ops = {
 	.handle = NULL,
@@ -110,18 +109,6 @@ static sim_intf_ops_t test_ops = {
 	.update_RA = update_RA,
 	.update_RA_prediction = update_RA_prediction
 };
-
-static snd_intf_ops_t snd_ops = {
-	.handle = NULL,
-	.sound_is_on = sound_on
-};
-
-static bool_t
-sound_is_on(void *handle)
-{
-	UNUSED(handle);
-	return (sound);
-}
 
 static bool_t
 read_command_file(FILE *fp)
@@ -794,7 +781,7 @@ main(int argc, char **argv)
 
 	xtcas_init(&test_ops);
 	xtcas_set_mode(TCAS_MODE_TARA);
-	if (!xtcas_snd_sys_init(snd_dir, &snd_ops))
+	if (!xtcas_snd_sys_init(snd_dir))
 		return (1);
 
 	cmdfile = fopen(argv[0], "r");
@@ -883,7 +870,7 @@ main(int argc, char **argv)
 		if (gfx)
 			draw_gui(win);
 
-		xtcas_snd_sys_run();
+		xtcas_snd_sys_run(sound);
 
 		cv_timedwait(&cv, &mtx, now + SIMSTEP);
 		now += SIMSTEP;

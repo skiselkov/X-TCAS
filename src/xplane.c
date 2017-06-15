@@ -39,7 +39,7 @@
 
 #include "xplane.h"
 
-#define	FLOOP_INTVAL			1.0
+#define	FLOOP_INTVAL			0.1
 #define	POS_UPDATE_INTVAL		0.1
 #define	XTCAS_PLUGIN_NAME		"X-TCAS 1.0"
 #define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas.1.0"
@@ -57,7 +57,9 @@ static XPLMDataRef time_dr = NULL,
     lon_dr = NULL,
     plane_x_dr = NULL,
     plane_y_dr = NULL,
-    plane_z_dr = NULL;
+    plane_z_dr = NULL,
+    view_is_ext_dr = NULL,
+    warn_volume_dr = NULL;
 
 static XPLMDataRef mp_plane_x_dr[MAX_MP_PLANES],
     mp_plane_y_dr[MAX_MP_PLANES],
@@ -65,14 +67,16 @@ static XPLMDataRef mp_plane_x_dr[MAX_MP_PLANES],
 
 static mutex_t acf_pos_lock;
 static avl_tree_t acf_pos_tree;
+static geo_pos3_t my_acf_pos;
+static double my_acf_agl = 0;
 static double last_pos_collected = 0;
+static double cur_sim_time = 0;
 
 static char plugindir[512] = { 0 };
 
 static double xp_get_time(void *handle);
 static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl);
 static void xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
-static bool_t xp_view_is_external(void *handle);
 
 static const sim_intf_ops_t xp_intf_ops = {
 	.handle = NULL,
@@ -82,11 +86,6 @@ static const sim_intf_ops_t xp_intf_ops = {
 	.update_contact = NULL,
 	.update_RA = NULL,
 	.update_RA_prediction = NULL
-};
-
-static const snd_intf_ops_t xp_snd_ops = {
-	.handle = NULL,
-	.sound_is_on = xp_view_is_external
 };
 
 static int
@@ -149,6 +148,11 @@ sim_intf_init(void)
 		    "sim/multiplayer/position/plane%d_z", i + 1);
 	}
 
+	view_is_ext_dr = find_dr_chk(xplmType_Int,
+	    "sim/graphics/view/view_is_external");
+	warn_volume_dr = find_dr_chk(xplmType_Float,
+	    "sim/operation/sound/warning_volume_ratio");
+
 	avl_create(&acf_pos_tree, acf_pos_compar, sizeof (acf_pos_t),
 	    offsetof(acf_pos_t, tree_node));
 	mutex_init(&acf_pos_lock);
@@ -199,6 +203,13 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 		return (1);
 	last_pos_collected = now;
 
+	/* grab our aircraft position */
+	my_acf_pos.lat = XPLMGetDatad(lat_dr);
+	my_acf_pos.lon = XPLMGetDatad(lon_dr);
+	my_acf_pos.elev = XPLMGetDataf(baro_alt_dr);
+	my_acf_agl = XPLMGetDataf(rad_alt_dr);
+
+	/* grab all other aircraft positions */
 	for (int i = 0; i < MAX_MP_PLANES; i++) {
 		vect3_t local;
 		geo_pos3_t world;
@@ -240,39 +251,32 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	return (1);
 }
 
-static float
-floop_cb(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop,
-    int counter, void *ref)
-{
-	UNUSED(inElapsedSinceLastCall);
-	UNUSED(inElapsedTimeSinceLastFlightLoop);
-	UNUSED(counter);
-	UNUSED(ref);
-
-	xtcas_run();
-
-	return (FLOOP_INTVAL);
-}
-
+/*
+ * Called from X-TCAS to get the current simulator time.
+ */
 static double
 xp_get_time(void *handle)
 {
 	UNUSED(handle);
 	ASSERT(intf_inited);
-	return (XPLMGetDataf(time_dr));
+	return (cur_sim_time);
 }
 
+/*
+ * Called from X-TCAS to get our aircraft position.
+ */
 static void
 xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl)
 {
 	UNUSED(handle);
 	ASSERT(intf_inited);
-	pos->lat = XPLMGetDatad(lat_dr);
-	pos->lon = XPLMGetDatad(lon_dr);
-	pos->elev = XPLMGetDataf(baro_alt_dr);
-	*alt_agl = XPLMGetDataf(rad_alt_dr);
+	*pos = my_acf_pos;
+	*alt_agl = my_acf_agl;
 }
 
+/*
+ * Called from X-TCAS to gather intruder aircraft position.
+ */
 static void
 xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 {
@@ -292,22 +296,25 @@ xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 	mutex_exit(&acf_pos_lock);
 }
 
-static bool_t
-xp_view_is_external(void *handle)
-{
-	UNUSED(handle);
-	return (B_FALSE);
-}
-
+/*
+ * Called by the plugin flight loop every simulator frame.
+ */
 static float
-snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
+floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
     int counter, void *refcon)
 {
+	double volume = (XPLMGetDatai(view_is_ext_dr) != 1) ?
+	    XPLMGetDataf(warn_volume_dr) : 0;
+
 	UNUSED(elapsed_since_last_call);
 	UNUSED(elapsed_since_last_floop);
 	UNUSED(counter);
 	UNUSED(refcon);
-	xtcas_snd_sys_run();
+
+	cur_sim_time = XPLMGetDataf(time_dr);
+	xtcas_run();
+	xtcas_snd_sys_run(volume);
+
 	return (-1.0);
 }
 
@@ -345,13 +352,11 @@ XPluginEnable(void)
 	xtcas_init(&xp_intf_ops);
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel, 1, NULL);
-	XPLMRegisterFlightLoopCallback(snd_sched_cb, -1.0, NULL);
 }
 
 PLUGIN_API void
 XPluginDisable(void)
 {
-	XPLMUnregisterFlightLoopCallback(snd_sched_cb, NULL);
 	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Panel,
 	    1, NULL);
 	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);
