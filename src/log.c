@@ -182,7 +182,7 @@ xtcas_log_backtrace(void)
 #ifndef	TEST_STANDALONE_BUILD
 	XPLMDebugString(backtrace_buf);
 #endif
-	fprintf(stderr, "%s", msg);
+	fprintf(stderr, "%s", backtrace_buf);
 
 #else	/* !IBM */
 

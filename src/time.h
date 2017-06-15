@@ -19,7 +19,7 @@
 #ifndef	_XTCAS_TIME_H_
 #define	_XTCAS_TIME_H_
 
-#include <stdlib.h>
+#include <stdint.h>
 
 #ifdef	__cplusplus
 extern "C" {

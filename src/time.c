@@ -21,6 +21,7 @@
 #else	/* !IBM */
 #include <sys/time.h>
 #endif	/* !IBM */
+#include <stdlib.h>
 
 #include "time.h"
 

@@ -58,7 +58,7 @@ extern "C" {
 		} \
 	} while (0)
 
-#define	VERIFY(x)	VERIFY_MSG(x, "", NULL);
+#define	VERIFY(x)	VERIFY_MSG(x, "%s", "")
 
 #define	VERIFY3_impl(x, op, y, type, fmt) \
 	do { \
@@ -72,9 +72,8 @@ extern "C" {
 			abort(); \
 		} \
 	} while (0)
-#define	VERIFY3S(x, op, y)	VERIFY3_impl(x, op, y, long long, "%lld")
-#define	VERIFY3U(x, op, y)	VERIFY3_impl(x, op, y, unsigned long long, \
-	"0x%llx")
+#define	VERIFY3S(x, op, y)	VERIFY3_impl(x, op, y, long, "%lu")
+#define	VERIFY3U(x, op, y)	VERIFY3_impl(x, op, y, unsigned long, "0x%lx")
 #define	VERIFY3F(x, op, y)	VERIFY3_impl(x, op, y, double, "%f")
 #define	VERIFY3P(x, op, y)	VERIFY3_impl(x, op, y, void *, "%p")
 

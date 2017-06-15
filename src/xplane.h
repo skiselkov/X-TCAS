@@ -26,7 +26,6 @@
 #include "avl.h"
 #include "geom.h"
 #include "list.h"
-#include "sim_intf.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -53,17 +53,10 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 	{ .file = "tfc.wav",		.wav = NULL }
 };
 
-static bool_t		inited = B_FALSE;
-static bool_t		sound_is_on = B_TRUE;
-static tcas_msg_t	cur_msg = -1;
-static sound_on_t	sound_on = NULL;
-
-#ifdef	TEST_STANDALONE_BUILD
-static bool_t		worker_shutdown = B_FALSE;
-static mutex_t		worker_lock;
-static condvar_t	worker_cv;
-static thread_t		worker_thr;
-#endif	/* TEST_STANDALONE_BUILD */
+static bool_t			inited = B_FALSE;
+static bool_t			sound_is_on = B_TRUE;
+static tcas_msg_t		cur_msg = -1;
+static const snd_intf_ops_t	*ops = NULL;
 
 static void
 set_sound_on(bool_t flag)
@@ -73,78 +66,36 @@ set_sound_on(bool_t flag)
 }
 
 void
-xtcas_play_msg(tcas_msg_t msg)
-{
-	ASSERT3U(msg, <, RA_NUM_MSGS);
-#ifndef	TEST_STANDALONE_BUILD
-	cur_msg = msg;
-#else	/* !TEST_STANDALONE_BUILD */
-	(void) xtcas_wav_play(voice_msgs[msg].wav);
-#endif	/* !TEST_STANDALONE_BUILD */
-}
-
-static float
-snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
-    int counter, void *refcon)
+xtcas_snd_sys_run(void)
 {
 	tcas_msg_t msg = cur_msg;
 
 	ASSERT(inited);
-	UNUSED(elapsed_since_last_call);
-	UNUSED(elapsed_since_last_floop);
-	UNUSED(counter);
-	UNUSED(refcon);
 
 	if ((int)msg != -1)
-		return (-1.0);
+		return;
 	cur_msg = -1;
+	ASSERT3U(msg, <, RA_NUM_MSGS);
 
 	/*
 	 * Make sure our messages are only audible when we're inside
 	 * the cockpit and AC power is on.
 	 */
-	if (sound_is_on && !sound_on()) {
+	if (sound_is_on && (ops->sound_is_on != NULL &&
+	    !ops->sound_is_on(ops->handle))) {
 		set_sound_on(B_FALSE);
 		sound_is_on = B_FALSE;
-	} else if (!sound_is_on && sound_on()) {
+	} else if (!sound_is_on && (ops->sound_is_on != NULL &&
+	    ops->sound_is_on(ops->handle))) {
 		set_sound_on(B_TRUE);
 		sound_is_on = B_TRUE;
 	}
 
-#ifndef	TEST_STANDALONE_BUILD
 	(void) xtcas_wav_play(voice_msgs[msg].wav);
-#endif
-
-	return (-1.0);
 }
-
-#ifdef	TEST_STANDALONE_BUILD
-
-static void
-snd_sched_loop(void)
-{
-	mutex_enter(&worker_lock);
-	while (!worker_shutdown) {
-		snd_sched_cb(0, 0, 0, NULL);
-		cv_timedwait(&worker_cv, &worker_lock, microclock() + 50000);
-	}
-	mutex_exit(&worker_lock);
-}
-
-void
-shutdown_worker(void)
-{
-	mutex_enter(&worker_lock);
-	worker_shutdown = B_TRUE;
-	cv_broadcast(&worker_cv);
-	mutex_exit(&worker_lock);
-	thread_join(&worker_thr);
-}
-
-#endif	/* TEST_STANDALONE_BUILD */
 
 bool_t
-xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op)
+xtcas_snd_sys_init(const char *snd_dir, const snd_intf_ops_t *intf_ops)
 {
 	dbg_log(snd, 1, "snd_sys_init");
 
@@ -169,14 +120,8 @@ xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op)
 		free(pathname);
 	}
 
-	sound_on = snd_op;
-#ifndef	TEST_STANDALONE_BUILD
-	XPLMRegisterFlightLoopCallback(snd_sched_cb, -1.0, NULL);
-#else	/* !TEST_STANDALONE_BUILD */
-	mutex_init(&worker_lock);
-	cv_init(&worker_cv);
-	VERIFY(thread_create(&worker_thr, snd_sched_loop, NULL));
-#endif	/* !TEST_STANDALONE_BUILD */
+	VERIFY(intf_ops != NULL);
+	ops = intf_ops;
 
 	inited = B_TRUE;
 
@@ -202,12 +147,6 @@ xtcas_snd_sys_fini(void)
 	if (!inited)
 		return;
 
-#ifndef	TEST_STANDALONE_BUILD
-	XPLMUnregisterFlightLoopCallback(snd_sched_cb, NULL);
-#else	/* TEST_STANDALONE_BUILD */
-	shutdown_worker();
-#endif	/* TEST_STANDALONE_BUILD */
-
 	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
 			xtcas_wav_free(voice_msgs[msg].wav);
@@ -219,4 +158,12 @@ xtcas_snd_sys_fini(void)
 	xtcas_openal_fini();
 
 	inited = B_FALSE;
+}
+
+void
+xtcas_play_msg(tcas_msg_t msg)
+{
+	ASSERT(inited);
+	ASSERT3U(msg, <, RA_NUM_MSGS);
+	cur_msg = msg;
 }

@@ -20,7 +20,7 @@
 
 #include <stdlib.h>
 
-#include "sim_intf.h"
+#include "avl.h"
 #include "types.h"
 #include "xtcas.h"
 
@@ -28,9 +28,16 @@
 extern "C" {
 #endif
 
+typedef struct {
+	/* Interface handle - for use by the interface provider */
+	void	*handle;
+	bool_t	(*sound_is_on)(void *handle);
+} snd_intf_ops_t;
+
 void xtcas_play_msg(tcas_msg_t msg);
 
-bool_t xtcas_snd_sys_init(const char *snd_dir, sound_on_t snd_op);
+bool_t xtcas_snd_sys_init(const char *snd_dir, const snd_intf_ops_t *intf_ops);
+void xtcas_snd_sys_run(void);
 void xtcas_snd_sys_fini(void);
 
 #ifdef	__cplusplus

@@ -193,15 +193,10 @@ double dir2hdg(vect2_t dir);
 /*
  * Calculating coordinate displacement & radial intersection.
  */
-struct wmm_s;
-geo_pos2_t geo_displace_mag(const ellip_t *ellip, const struct wmm_s *wmm,
-    geo_pos2_t pos, double maghdg, double dist);
 geo_pos2_t geo_displace(const ellip_t *ellip, geo_pos2_t pos, double truehdg,
     double dist);
 geo_pos2_t geo_displace_dir(const ellip_t *ellip, geo_pos2_t pos, vect2_t dir,
     double dist);
-geo_pos2_t geo_mag_radial_isect(const ellip_t *ellip, const struct wmm_s *wmm,
-    geo_pos2_t pos1, double rad1, geo_pos2_t pos2, double rad2);
 
 /*
  * Geometry parser & validator helpers.

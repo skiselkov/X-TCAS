@@ -42,7 +42,7 @@
 #define	NUM_RA_INFOS		26
 
 #define	WORKER_LOOP_INTVAL	1		/* seconds */
-#define	WORKER_LOOP_INTVAL_US	SEC2USEC(WORKER_LOOP_INTVAL)
+#define	WORKER_LOOP_INTVAL_US	((uint64_t)SEC2USEC(WORKER_LOOP_INTVAL))
 #define	STATE_CHG_DELAY		SEC2USEC(4)	/* microseconds */
 #define	EARTH_G			9.81		/* m.s^-2 */
 #define	INITIAL_RA_D_VVEL	(EARTH_G / 4)	/* 1/4 g */
@@ -181,181 +181,201 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = 0, .vs.in.max = INF_VS,
-	.vs.out.min = 0, .vs.out.max = INF_VS,
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = 0,
-	.vs.red_hi.min = 0, .vs.red_hi.max = 0
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {0, INF_VS}, .out = {0, INF_VS},
+	    .red_lo = {-INF_VS, 0}, .red_hi = {0, 0}
+	}
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(-500), .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(-500), .vs.out.max = INF_VS,
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-500),
-	.vs.red_hi.min = FPM2MPS(-500), .vs.red_hi.max = FPM2MPS(-500)
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(-500), INF_VS}, .out = {FPM2MPS(-500), INF_VS},
+	    .red_lo = {-INF_VS, FPM2MPS(-500)},
+	    .red_hi = {FPM2MPS(-500), FPM2MPS(-500)}
+	}
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(-1000), .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(-1000), .vs.out.max = INF_VS,
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-1000),
-	.vs.red_hi.min = FPM2MPS(-1000), .vs.red_hi.max = FPM2MPS(-1000)
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(-1000), INF_VS}, .out = {FPM2MPS(-1000), INF_VS},
+	    .red_lo = {-INF_VS, FPM2MPS(-1000)},
+	    .red_hi = {FPM2MPS(-1000), FPM2MPS(-1000)}
+	}
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(-2000), .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(-2000), .vs.out.max = INF_VS,
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-2000),
-	.vs.red_hi.min = FPM2MPS(-2000), .vs.red_hi.max = FPM2MPS(-2000)
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(-2000), INF_VS}, .out = {FPM2MPS(-2000), INF_VS},
+	    .red_lo = {-INF_VS, FPM2MPS(-2000)},
+	    .red_hi = {FPM2MPS(-2000), FPM2MPS(-2000)}
+	}
     },
 
 /* Preventive descending RAs */
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = 0,
-	.vs.out.min = -INF_VS, .vs.out.max = 0,
-	.vs.red_lo.min = 0, .vs.red_lo.max = 0,
-	.vs.red_hi.min = 0, .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, 0}, .out = { -INF_VS, 0},
+	    .red_lo = {0, 0}, .red_hi = {0, INF_VS}
+	}
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(500),
-	.vs.out.min = -INF_VS, .vs.out.max = FPM2MPS(500),
-	.vs.red_lo.min = FPM2MPS(500), .vs.red_lo.max = FPM2MPS(500),
-	.vs.red_hi.min = FPM2MPS(500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, FPM2MPS(500)}, .out = {-INF_VS, FPM2MPS(500)},
+	    .red_lo = {FPM2MPS(500), FPM2MPS(500)},
+	    .red_hi = {FPM2MPS(500), INF_VS}
+	}
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(1000),
-	.vs.out.min = -INF_VS, .vs.out.max = FPM2MPS(1000),
-	.vs.red_lo.min = FPM2MPS(1000), .vs.red_lo.max = FPM2MPS(1000),
-	.vs.red_hi.min = FPM2MPS(1000), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, FPM2MPS(1000)}, .out = {-INF_VS, FPM2MPS(1000)},
+	    .red_lo = {FPM2MPS(1000), FPM2MPS(1000)},
+	    .red_hi = {FPM2MPS(1000), INF_VS}
+	}
     },
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(2000),
-	.vs.out.min = -INF_VS, .vs.out.max = FPM2MPS(2000),
-	.vs.red_lo.min = FPM2MPS(2000), .vs.red_lo.max = FPM2MPS(2000),
-	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, FPM2MPS(2000)}, .out = {-INF_VS, FPM2MPS(2000)},
+	    .red_lo = {FPM2MPS(2000), FPM2MPS(2000)},
+	    .red_hi = {FPM2MPS(2000), INF_VS}
+	}
     },
 
 /* Preventive level RA */
     {	/* MONITOR VERTICAL SPEED */
 	.msg = RA_MSG_MONITOR_VS, .rev_msg = RA_MSG_MONITOR_VS,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_LEVEL_OFF,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = -FPM2MPS(-100), .vs.in.max = FPM2MPS(100),
-	.vs.out.min = FPM2MPS(-100), .vs.out.max = FPM2MPS(100),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-100),
-	.vs.red_hi.min = FPM2MPS(100), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-FPM2MPS(-100), FPM2MPS(100)},
+	    .out = {FPM2MPS(-100), FPM2MPS(100)},
+	    .red_lo = {-INF_VS, FPM2MPS(-100)},
+	    .red_hi = {FPM2MPS(100), INF_VS}
+	}
     },
 
 /* Corrective level-off RAs */
     {	/* LEVEL OFF */
 	.msg = RA_MSG_LEVEL_OFF, .rev_msg = RA_MSG_LEVEL_OFF,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ, .chk_black = B_TRUE,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(-250), .vs.out.max = FPM2MPS(250),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = -FPM2MPS(-250),
-	.vs.red_hi.min = FPM2MPS(250), .vs.red_hi.max = INF_VS,
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_TRUE, .vs = {
+	    .in = {-INF_VS, INF_VS}, .out = {FPM2MPS(-250), FPM2MPS(250)},
+	    .red_lo = {-INF_VS, -FPM2MPS(-250)},
+	    .red_hi = {FPM2MPS(250), INF_VS}
+	}
     },
     {	/* LEVEL OFF */
 	.msg = RA_MSG_LEVEL_OFF, .rev_msg = RA_MSG_LEVEL_OFF,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ, .chk_black = B_TRUE,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(-300), .vs.out.max = 0,
-	.vs.red_lo.min = FPM2MPS(-300), .vs.red_lo.max = FPM2MPS(-300),
-	.vs.red_hi.min = 0, .vs.red_hi.max = INF_VS,
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_TRUE, .vs = {
+	    .in = {-INF_VS, INF_VS}, .out = {FPM2MPS(-300), 0},
+	    .red_lo = {FPM2MPS(-300), FPM2MPS(-300)}, .red_hi = {0, INF_VS}
+	}
     },
     {	/* LEVEL OFF */
 	.msg = RA_MSG_LEVEL_OFF, .rev_msg = RA_MSG_LEVEL_OFF,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_LEVEL_OFF,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ, .chk_black = B_TRUE,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
-	.vs.out.min = 0, .vs.out.max = FPM2MPS(300),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = 0,
-	.vs.red_hi.min = FPM2MPS(300), .vs.red_hi.max = FPM2MPS(300)
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_TRUE, .vs = {
+	    .in = {-INF_VS, INF_VS}, .out = {0, FPM2MPS(300)},
+	    .red_lo = {-INF_VS, 0}, .red_hi = {FPM2MPS(300), FPM2MPS(300)}
+	}
     },
 
 /* Corrective climbing RAs */
     {	/* MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN - large VS range */
 	.msg = RA_MSG_MAINT_VS_CROSS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(4400),
-	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(4400),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
-	.vs.red_hi.min = FPM2MPS(4400), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(1500), FPM2MPS(4400)},
+	    .out = {FPM2MPS(1500), FPM2MPS(4400)},
+	    .red_lo = {-INF_VS, FPM2MPS(1500)},
+	    .red_hi = {FPM2MPS(4400), INF_VS}
+	}
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN - large VS range */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(4400),
-	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(4400),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
-	.vs.red_hi.min = FPM2MPS(4400), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_FALSE, .vs ={
+	    .in = {FPM2MPS(1500), FPM2MPS(4400)},
+	    .out = {FPM2MPS(1500), FPM2MPS(4400)},
+	    .red_lo = {-INF_VS, FPM2MPS(1500)},
+	    .red_hi = {FPM2MPS(4400), INF_VS}
+	}
     },
     {	/* MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN */
 	.msg = RA_MSG_MAINT_VS_CROSS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(2000),
-	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
-	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(1500), FPM2MPS(2000)},
+	    .out = {FPM2MPS(1500), FPM2MPS(2000)},
+	    .red_lo = {-INF_VS, FPM2MPS(1500)},
+	    .red_hi = {FPM2MPS(2000), INF_VS}
+	}
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(1500), .vs.in.max = FPM2MPS(2000),
-	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
-	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(1500), FPM2MPS(2000)},
+	    .out = {FPM2MPS(1500), FPM2MPS(2000)},
+	    .red_lo = {-INF_VS, FPM2MPS(1500)},
+	    .red_hi = {FPM2MPS(2000), INF_VS}
+	}
     },
     {	/* CLIMB, CLIMB */
 	.msg = RA_MSG_CLB, .rev_msg = RA_MSG_CLB_NOW,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
-	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = FPM2MPS(2000)
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, INF_VS}, .out = {FPM2MPS(1500), FPM2MPS(2000)},
+	    .red_lo = {-INF_VS, FPM2MPS(1500)},
+	    .red_hi = {FPM2MPS(2000), FPM2MPS(2000)}
+	}
     },
     {	/* CLIMB, CROSSING CLIMB */
 	.msg = RA_MSG_CLB_CROSS, .rev_msg = RA_MSG_CLB_NOW,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(1500), .vs.out.max = FPM2MPS(2000),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(1500),
-	.vs.red_hi.min = FPM2MPS(2000), .vs.red_hi.max = FPM2MPS(2000)
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, INF_VS}, .out = {FPM2MPS(1500), FPM2MPS(2000)},
+	    .red_lo = {-INF_VS, FPM2MPS(1500)},
+	    .red_hi = {FPM2MPS(2000), FPM2MPS(2000)}
+	}
     },
     {	/* INCREASE CLIMB */
 	.msg = RA_MSG_CLB_MORE, .rev_msg = -1,
 	.initial = B_FALSE, .subseq = B_TRUE, .sense = RA_SENSE_UPWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(500), .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(2500), .vs.out.max = FPM2MPS(4400),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(2500),
-	.vs.red_hi.min = FPM2MPS(4400), .vs.red_hi.max = FPM2MPS(4400)
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(500), INF_VS}, .out = {FPM2MPS(2500), FPM2MPS(4400)},
+	    .red_lo = {-INF_VS, FPM2MPS(2500)},
+	    .red_hi = {FPM2MPS(4400), FPM2MPS(4400)}
+	}
     },
 
 
@@ -363,65 +383,77 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
     {	/* MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN - large VS range */
 	.msg = RA_MSG_MAINT_VS_CROSS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REQ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(-4400), .vs.in.max = FPM2MPS(-1500),
-	.vs.out.min = FPM2MPS(-4400), .vs.out.max = FPM2MPS(-1500),
-	.vs.red_lo.min = FPM2MPS(-4400), .vs.red_lo.max = FPM2MPS(-4400),
-	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REQ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(-4400), FPM2MPS(-1500)},
+	    .out = {FPM2MPS(-4400), FPM2MPS(-1500)},
+	    .red_lo = {FPM2MPS(-4400), FPM2MPS(-4400)},
+	    .red_hi = {FPM2MPS(-1500), INF_VS}
+	}
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN - large VS range */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REJ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(-4400), .vs.in.max = FPM2MPS(-1500),
-	.vs.out.min = FPM2MPS(-4400), .vs.out.max = FPM2MPS(-1500),
-	.vs.red_lo.min = FPM2MPS(-4400), .vs.red_lo.max = FPM2MPS(-4400),
-	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(-4400), FPM2MPS(-1500)},
+	    .out = {FPM2MPS(-4400), FPM2MPS(-1500)},
+	    .red_lo = {FPM2MPS(-4400), FPM2MPS(-4400)},
+	    .red_hi = {FPM2MPS(-1500), INF_VS}
+	}
     },
     {	/* MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN - high VS range */
 	.msg = RA_MSG_MAINT_VS_CROSS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REQ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(-2000), .vs.in.max = FPM2MPS(-1500),
-	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-2000),
-	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REQ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(-2000), FPM2MPS(-1500)},
+	    .out = {FPM2MPS(-2000), FPM2MPS(-1500)},
+	    .red_lo = {-INF_VS, FPM2MPS(-2000)},
+	    .red_hi = {FPM2MPS(-1500), INF_VS}
+	}
     },
     {	/* MAINTAIN VERTICAL SPEED, MAINTAIN */
 	.msg = RA_MSG_MAINT_VS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REJ, .chk_black = B_FALSE,
-	.vs.in.min = FPM2MPS(-2000), .vs.in.max = FPM2MPS(-1500),
-	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-2000),
-	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_PREVENTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {FPM2MPS(-2000), FPM2MPS(-1500)},
+	    .out = {FPM2MPS(-2000), FPM2MPS(-1500)},
+	    .red_lo = {-INF_VS, FPM2MPS(-2000)},
+	    .red_hi = {FPM2MPS(-1500), INF_VS}
+	}
     },
     {	/* DESCEND, DESCEND */
 	.msg = RA_MSG_DES, .rev_msg = RA_MSG_DES_NOW,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.red_lo.min = FPM2MPS(-2000), .vs.red_lo.max = FPM2MPS(-2000),
-	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REJ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, INF_VS}, .out = {FPM2MPS(-2000), FPM2MPS(-1500)},
+	    .red_lo = {FPM2MPS(-2000), FPM2MPS(-2000)},
+	    .red_hi = {FPM2MPS(-1500), INF_VS}
+	}
     },
     {	/* DESCEND, CROSSING DESCEND */
 	.msg = RA_MSG_DES_CROSS, .rev_msg = RA_MSG_DES_NOW,
 	.initial = B_TRUE, .subseq = B_TRUE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = INF_VS,
-	.vs.out.min = FPM2MPS(-2000), .vs.out.max = FPM2MPS(-1500),
-	.vs.red_lo.min = FPM2MPS(-2000), .vs.red_lo.max = FPM2MPS(-2000),
-	.vs.red_hi.min = FPM2MPS(-1500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, INF_VS}, .out = {FPM2MPS(-2000), FPM2MPS(-1500)},
+	    .red_lo = {FPM2MPS(-2000), FPM2MPS(-2000)},
+	    .red_hi = {FPM2MPS(-1500), INF_VS}
+	}
     },
     {	/* INCREASE DESCENT */
 	.msg = RA_MSG_DES_MORE, .rev_msg = -1,
 	.initial = B_FALSE, .subseq = B_TRUE, .sense = RA_SENSE_DOWNWARD,
-	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_ANY, .chk_black = B_FALSE,
-	.vs.in.min = -INF_VS, .vs.in.max = FPM2MPS(-500),
-	.vs.out.min = FPM2MPS(-4400), .vs.out.max = FPM2MPS(-2500),
-	.vs.red_lo.min = -INF_VS, .vs.red_lo.max = FPM2MPS(-4400),
-	.vs.red_hi.min = FPM2MPS(-2500), .vs.red_hi.max = INF_VS
+	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_ANY,
+	.chk_black = B_FALSE, .vs = {
+	    .in = {-INF_VS, FPM2MPS(-500)},
+	    .out = {FPM2MPS(-4400), FPM2MPS(-2500)},
+	    .red_lo = {-INF_VS, FPM2MPS(-4400)},
+	    .red_hi = {FPM2MPS(-2500), INF_VS}
+	}
     }
 };
 
@@ -1275,13 +1307,13 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 		double agl_at_cpa = my_acf->agl - (my_acf->cur_pos.elev -
 		    ((cpa_t *)avl_last(cpas))->pos_a.z);
 		tcas_msg_t prev_msg = (prev_ra != NULL ?
-		    prev_ra->info->msg : -1);
+		    prev_ra->info->msg : -1u);
 		tcas_RA_sense_t prev_sense = (prev_ra != NULL ?
 		    prev_ra->info->sense : RA_SENSE_LEVEL_OFF);
 		bool_t reversal = (prev_sense != RA_SENSE_LEVEL_OFF &&
 		    ri->sense != RA_SENSE_LEVEL_OFF && prev_sense != ri->sense);
 		tcas_RA_type_t prev_type = (prev_ra != NULL ?
-		    prev_ra->info->type : -1);
+		    prev_ra->info->type : -1u);
 		tcas_msg_t msg;
 		double penalty = 0;
 

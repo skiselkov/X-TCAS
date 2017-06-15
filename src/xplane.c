@@ -69,19 +69,24 @@ static double last_pos_collected = 0;
 
 static char plugindir[512] = { 0 };
 
-static double xp_get_time(void);
-static void xp_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl);
-static void xp_get_oth_acf_pos(acf_pos_t **pos_p, size_t *num);
-static bool_t xp_view_is_external(void);
+static double xp_get_time(void *handle);
+static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl);
+static void xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
+static bool_t xp_view_is_external(void *handle);
 
-static sim_intf_ops_t xp_intf_ops = {
+static const sim_intf_ops_t xp_intf_ops = {
 	.handle = NULL,
 	.get_time = xp_get_time,
 	.get_my_acf_pos = xp_get_my_acf_pos,
-	.get_oth_acf_pos = xp_get_oth_acf_pos
-	.update_threat = NULL,
+	.get_oth_acf_pos = xp_get_oth_acf_pos,
+	.update_contact = NULL,
 	.update_RA = NULL,
 	.update_RA_prediction = NULL
+};
+
+static const snd_intf_ops_t xp_snd_ops = {
+	.handle = NULL,
+	.sound_is_on = xp_view_is_external
 };
 
 static int
@@ -189,7 +194,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	double now;
 
 	/* grab updates only at a set interval */
-	now = xp_get_time();
+	now = xp_get_time(NULL);
 	if (last_pos_collected + POS_UPDATE_INTVAL > now)
 		return (1);
 	last_pos_collected = now;
@@ -207,7 +212,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 
 		mutex_enter(&acf_pos_lock);
 
-		srch.acf_id = (void *)(long)(i + 1);
+		srch.acf_id = (void *)(uintptr_t)(i + 1);
 		pos = avl_find(&acf_pos_tree, &srch, &where);
 		/*
 		 * This is exceedingly unlikely, so it's "good enough" to use
@@ -221,7 +226,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 		} else {
 			if (pos == NULL) {
 				pos = calloc(1, sizeof (*pos));
-				pos->acf_id = (void *)(long)(i + 1);
+				pos->acf_id = (void *)(uintptr_t)(i + 1);
 				avl_insert(&acf_pos_tree, pos, where);
 			}
 			XPLMLocalToWorld(local.x, local.y, local.z,
@@ -250,15 +255,17 @@ floop_cb(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop,
 }
 
 static double
-xp_get_time(void)
+xp_get_time(void *handle)
 {
+	UNUSED(handle);
 	ASSERT(intf_inited);
 	return (XPLMGetDataf(time_dr));
 }
 
 static void
-xp_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
+xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl)
 {
+	UNUSED(handle);
 	ASSERT(intf_inited);
 	pos->lat = XPLMGetDatad(lat_dr);
 	pos->lon = XPLMGetDatad(lon_dr);
@@ -267,10 +274,12 @@ xp_get_my_acf_pos(geo_pos3_t *pos, double *alt_agl)
 }
 
 static void
-xp_get_oth_acf_pos(acf_pos_t **pos_p, size_t *num)
+xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 {
 	size_t i;
 	acf_pos_t *pos;
+
+	UNUSED(handle);
 
 	mutex_enter(&acf_pos_lock);
 	*num = avl_numnodes(&acf_pos_tree);
@@ -284,9 +293,22 @@ xp_get_oth_acf_pos(acf_pos_t **pos_p, size_t *num)
 }
 
 static bool_t
-xp_view_is_external(void)
+xp_view_is_external(void *handle)
 {
+	UNUSED(handle);
 	return (B_FALSE);
+}
+
+static float
+snd_sched_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
+    int counter, void *refcon)
+{
+	UNUSED(elapsed_since_last_call);
+	UNUSED(elapsed_since_last_floop);
+	UNUSED(counter);
+	UNUSED(refcon);
+	xtcas_snd_sys_run();
+	return (-1.0);
 }
 
 PLUGIN_API int
@@ -301,7 +323,7 @@ XPluginStart(char *name, char *sig, char *desc)
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
 	sim_intf_init();
 	snd_dir = mkpathname(plugindir, "data", "male1", NULL);
-	if (!xtcas_snd_sys_init(plugindir, xp_view_is_external)) {
+	if (!xtcas_snd_sys_init(plugindir, &xp_snd_ops)) {
 		free(snd_dir);
 		return (0);
 	}
@@ -323,11 +345,13 @@ XPluginEnable(void)
 	xtcas_init(&xp_intf_ops);
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel, 1, NULL);
+	XPLMRegisterFlightLoopCallback(snd_sched_cb, -1.0, NULL);
 }
 
 PLUGIN_API void
 XPluginDisable(void)
 {
+	XPLMUnregisterFlightLoopCallback(snd_sched_cb, NULL);
 	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Panel,
 	    1, NULL);
 	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);

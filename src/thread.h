@@ -25,7 +25,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #else	/* !APL && !LIN */
-#error	"Unsupported platform"
+#include <windows.h>
 #endif	/* !APL && !LIN */
 
 #include "types.h"
@@ -33,6 +33,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*
+ * Basic portable multi-threading API. We have 4 kinds of objects and
+ * associated manipulation functions here:
+ * 1) threat_t - A generic thread identification structure.
+ * 2) mutex_t - A generic mutual exclusion lock.
+ * 3) condvar_t - A generic condition variable.
+ */
 
 #if	APL || LIN
 
@@ -44,23 +52,43 @@ extern "C" {
 	(pthread_create(thrp, NULL, (void *(*)(void *))proc, \
 	    arg) == 0)
 #define	thread_join(thrp)	pthread_join(*(thrp), NULL)
+#define	mutex_init(mtx)		pthread_mutex_init((mtx), NULL)
+#define	mutex_destroy(mtx)	pthread_mutex_destroy((mtx))
+#define	mutex_enter(mtx)	pthread_mutex_lock((mtx))
+#define	mutex_exit(mtx)		pthread_mutex_unlock((mtx))
 
-#define	mutex_init(x)		pthread_mutex_init((x), NULL)
-#define	mutex_destroy(x)	pthread_mutex_destroy((x))
-#define	mutex_enter(x)		pthread_mutex_lock((x))
-#define	mutex_tryenter(x)	(pthread_mutex_trylock((x)) == 0)
-#define	mutex_exit(x)		pthread_mutex_unlock((x))
-
-#define	cv_wait(cond, mtx)	pthread_cond_wait((cond), (mtx))
+#define	cv_wait(cv, mtx)	pthread_cond_wait((cv), (mtx))
 #define	cv_timedwait		xtcas_cv_timedwait
-#define	cv_init(x)		pthread_cond_init((x), NULL)
-#define	cv_destroy(x)		pthread_cond_destroy((x))
-#define	cv_signal(x)		pthread_cond_signal((x))
-#define	cv_broadcast(x)		pthread_cond_broadcast((x))
+#define	cv_init(cv)		pthread_cond_init((cv), NULL)
+#define	cv_destroy(cv)		pthread_cond_destroy((cv))
+#define	cv_broadcast(cv)	pthread_cond_broadcast((cv))
 
 bool_t xtcas_cv_timedwait(condvar_t *cond, mutex_t *mtx, uint64_t microtime);
 
 #else	/* !APL && !LIN */
+
+#define	thread_t	HANDLE
+#define	mutex_t		CRITICAL_SECTION
+#define	condvar_t	CONDITION_VARIABLE
+
+#define	mutex_init	InitializeCriticalSection
+#define	mutex_destroy	DeleteCriticalSection
+#define	mutex_enter	EnterCriticalSection
+#define	mutex_exit	LeaveCriticalSection
+
+#define	thread_create(thrp, proc, arg) \
+	((*(thrp) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)proc, arg, \
+	    0, NULL)) != NULL)
+#define	thread_join(thrp)	VERIFY(WaitForSingleObject(*(thrp), INFINITE))
+
+#define	cv_wait(cv, mtx) \
+	VERIFY(SleepConditionVariableCS((cv), (mtx), INFINITE))
+#define	cv_timedwait(cv, mtx, microtime) \
+	SleepConditionVariableCS((cv), (mtx), \
+	((microtime) - microclock()) / 1000)
+#define	cv_init		InitializeConditionVariable
+#define	cv_destroy(cv)	/* no-op */
+#define	cv_broadcast	WakeAllConditionVariable
 
 #endif	/* !APL && !LIN */
 

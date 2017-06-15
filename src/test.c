@@ -33,6 +33,7 @@
 #include "snd_sys.h"
 #include "time.h"
 #include "thread.h"
+#include "xtcas.h"
 
 #include "test.h"
 
@@ -97,8 +98,10 @@ static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
 static void update_RA_prediction(void *handle, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
     bool_t reversal, double min_sep_cpa);
+static bool_t sound_is_on(void *handle);
 
 static sim_intf_ops_t test_ops = {
+	.handle = NULL,
 	.get_time = get_time,
 	.get_my_acf_pos = get_my_acf_pos,
 	.get_oth_acf_pos = get_oth_acf_pos,
@@ -108,9 +111,15 @@ static sim_intf_ops_t test_ops = {
 	.update_RA_prediction = update_RA_prediction
 };
 
+static snd_intf_ops_t snd_ops = {
+	.handle = NULL,
+	.sound_is_on = sound_on
+};
+
 static bool_t
-sound_on(void)
+sound_is_on(void *handle)
 {
+	UNUSED(handle);
 	return (sound);
 }
 
@@ -785,6 +794,8 @@ main(int argc, char **argv)
 
 	xtcas_init(&test_ops);
 	xtcas_set_mode(TCAS_MODE_TARA);
+	if (!xtcas_snd_sys_init(snd_dir, &snd_ops))
+		return (1);
 
 	cmdfile = fopen(argv[0], "r");
 	if (cmdfile == NULL) {
@@ -793,11 +804,7 @@ main(int argc, char **argv)
 	}
 	if (!read_command_file(cmdfile))
 		return (1);
-
 	fclose(cmdfile);
-
-	if (!xtcas_snd_sys_init(snd_dir, sound_on))
-		return (1);
 
 	fpp = ortho_fpp_init(refpt, refrot, &wgs84, B_TRUE);
 
@@ -876,6 +883,8 @@ main(int argc, char **argv)
 		if (gfx)
 			draw_gui(win);
 
+		xtcas_snd_sys_run();
+
 		cv_timedwait(&cv, &mtx, now + SIMSTEP);
 		now += SIMSTEP;
 	}
@@ -888,6 +897,7 @@ out:
 	cv_destroy(&cv);
 
 	xtcas_fini();
+	xtcas_snd_sys_fini();
 
 	for (maneuver_t *man = list_head(&my_acf.maneuvers); man != NULL;
 	    man = list_head(&my_acf.maneuvers)) {
@@ -907,7 +917,6 @@ out:
 	}
 	list_destroy(&other_acf);
 
-	xtcas_snd_sys_fini();
 	return (0);
 }
 

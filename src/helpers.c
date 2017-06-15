@@ -246,6 +246,58 @@ append_format(char **str, size_t *sz, const char *format, ...)
 }
 
 /*
+ * strlcpy is a BSD function not available on Windows, so we roll a simple
+ * version of it ourselves.
+ */
+void
+my_strlcpy(char *restrict dest, const char *restrict src, size_t cap)
+{
+	dest[cap - 1] = '\0';
+	strncpy(dest, src, cap - 1);
+}
+
+#if	IBM
+
+/*
+ * C getline is a POSIX function, so on Windows, we need to roll our own.
+ */
+ssize_t
+getline(char **line_p, size_t *cap_p, FILE *fp)
+{
+	ASSERT(line_p != NULL);
+	ASSERT(cap_p != NULL);
+	ASSERT(fp != NULL);
+
+	char *line = *line_p;
+	size_t cap = *cap_p, n = 0;
+
+	do {
+		if (n + 1 >= cap) {
+			cap += 256;
+			line = realloc(line, cap);
+		}
+		ASSERT(n < cap);
+		if (fgets(&line[n], cap - n, fp) == NULL) {
+			if (n != 0) {
+				break;
+			} else {
+				*line_p = line;
+				*cap_p = cap;
+				return (-1);
+			}
+		}
+		n = strlen(line);
+	} while (n > 0 && line[n - 1] != '\n');
+
+	*line_p = line;
+	*cap_p = cap;
+
+	return (n);
+}
+
+#endif	/* IBM */
+
+/*
  * Creates a file path string from individual path components. The
  * components are provided as separate filename arguments and the list needs
  * to be terminated with a NULL argument. The returned string can be freed

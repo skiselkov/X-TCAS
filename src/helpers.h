@@ -181,6 +181,11 @@ void append_format(char **str, size_t *sz, const char *format, ...)
 char *mkpathname(const char *comp, ...);
 char *mkpathname_v(const char *comp, va_list ap);
 
+void my_strlcpy(char *restrict dest, const char *restrict src, size_t cap);
+#if	IBM
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
+#endif	/* IBM */
+
 #if	defined(__GNUC__) || defined(__clang__)
 #define	highbit64(x)	(64 - __builtin_clzll(x) - 1)
 #define	highbit32(x)	(32 - __builtin_clzll(x) - 1)
