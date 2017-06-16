@@ -413,6 +413,12 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 	int color;
 	double trk = normalize_hdg(acf->trk - my_trk);
 
+	xy = vect2_rot(xy, -my_trk);
+	x = cx - xy.x / scaleh;
+	y = cy + xy.y / scalev;
+	if (x - 1 < 5 || x + 6 >= maxx || y - 1 < 3 || y + 2 >= maxy)
+		return;
+
 	switch (acf->threat_level) {
 	case OTH_THREAT:
 		acf_symbol = "o";
@@ -441,12 +447,6 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 		clb_symbol = '^';
 	else if (acf->vs <= FPM2MPS(-500))
 		clb_symbol = 'v';
-
-	xy = vect2_rot(xy, -my_trk);
-	x = cx - xy.x / scaleh;
-	y = cy + xy.y / scalev;
-	if (x - 1 < 0 || x + 6 >= maxx || y - 1 < 0 || y + 2 >= maxy)
-		return;
 
 	if (color > 0)
 		attron(COLOR_PAIR(color));
@@ -533,7 +533,8 @@ draw_gui(WINDOW *win)
 			v = vect2_rot(v, -my_acf.trk);
 			x = maxx / 2 + v.x / scaleh;
 			y = maxy / 2 - v.y / scalev;
-			if (x < 0 || x >= maxx || y < 0 || y >= maxy)
+			if (x < 5 || x + 10 >= maxx ||
+			    y < 4 || y >= maxy)
 				continue;
 			move(y, x);
 			printw(".");

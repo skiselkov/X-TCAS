@@ -870,7 +870,7 @@ static void
 compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 {
 	vect3_t my_pos_3d = my_acf->cur_pos_3d;
-	vect2_t my_dir = vect2_set_abs(hdg2dir(my_acf->trk), my_acf->gs);
+	vect2_t my_dir = vect2_set_abs(my_acf->trk_v, my_acf->gs);
 	vect3_t my_vel = VECT3(my_dir.x, my_dir.y, my_acf->vvel);
 
 	avl_create(cpas, cpa_compar, sizeof (cpa_t), offsetof(cpa_t, node));
@@ -879,7 +879,7 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 	    acf = AVL_NEXT(other_acf, acf)) {
 		vect2_t dir;
 		vect3_t pos_3d, vel, rel_vel, cpa_pos, my_cpa_pos;
-		double t_cpa, dist;
+		double t_cpa, d_h, d_v;
 		cpa_t *cpa;
 		double d_vvel;
 
@@ -903,11 +903,8 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		    (pos_3d.z - rel_vel.z)) /
 		    (POW2(rel_vel.x) + POW2(rel_vel.y) + POW2(rel_vel.z));
 
-		/*
-		 * If the CPA is in the past or too far into the future, don't
-		 * even bother.
-		 */
-		if (t_cpa <= 0 || t_cpa > CPA_MAX_T) {
+		/* If the CPA is in the past, don't even bother. */
+		if (t_cpa <= 0) {
 			dbg_log(cpa, 2, "bogie %p t_cpa: %.1f, culling",
 			    acf->acf_id, t_cpa);
 			continue;
@@ -916,10 +913,12 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		cpa_pos = vect3_add(pos_3d, vect3_scmul(vel, t_cpa));
 		my_cpa_pos = vect3_add(my_pos_3d, vect3_scmul(my_vel, t_cpa));
 		/* If we are too far apart at CPA, don't even bother. */
-		dist = vect3_abs(vect3_sub(cpa_pos, my_cpa_pos));
-		if (dist > CPA_MAX_DIST) {
-			dbg_log(cpa, 2, "bogie %p dist: %.0f, culling",
-			    acf->acf_id, dist);
+		d_h = vect2_abs(vect2_sub(VECT3_TO_VECT2(cpa_pos),
+		    VECT3_TO_VECT2(my_cpa_pos)));
+		d_v = ABS(cpa_pos.z - my_cpa_pos.z);
+		if (d_h > CPA_MAX_D_H || d_v > CPA_MAX_D_V) {
+			dbg_log(cpa, 2, "bogie %p d_h:%.0f d_v:%.0f, culling",
+			    acf->acf_id, d_h, d_v);
 			continue;
 		}
 
@@ -946,6 +945,34 @@ destroy_CPAs(avl_tree_t *cpas)
 	avl_destroy(cpas);
 }
 
+/*
+ * Given an intruder aircraft and the current SL, assigns the threat level
+ * (tcas_threat_t) to that aircraft. Arguments:
+ * @param my_pos_3d Our current position in 3-space vector coordinates.
+ * @param oacf The other aircraft contact to which to assign a threat level.
+ * @param sl The current sensitivity level selected for TCAS
+ *	(see xtcas_SL_select).
+ * @param RA_hints A set of external RA-threat hints. When an aircraft
+ *	is initially declared an RA threat, it is marked in this tree
+ *	to prevent degrading it to a lower threat during maneuvers.
+ * @param filter The currently active TCAS altitude filter (see tcas_filter_t).
+ *
+ * The order of threat assignments here is important. We go from most serious
+ * to least serious:
+ * 1) If an intruder violates our RA protected volume or RA tau, they are
+ *    placed at the highest level of RA_THREAT_CORR.
+ * 2) If an intruder didn't satisfy condition 1, we look for a previous
+ *    RA threat hint, so we might still declare them RA_THREAT_CORR or
+ *    RA_THREAT_PREV.
+ * 3) If there is no hint, we evaluate the protected volume and tau space
+ *    for preventive threatds (same horizontal space, vertical expanded
+ *    to zthr_TA) and assign RA_THREAT_PREV if we find something.
+ * 4) If conditions 1-3 aren't met, the intruder is definitely NOT an RA
+ *    threat. Evaluate the TA protection volume and tau and assign TA_THREAT.
+ * 5) If 1-4 aren't met, the intruder is not a threat, so just evaluate
+ *    range & altitude to determine proximate traffic and assign PROX_THREAT.
+ * 6) Lastly, any other intruder is other traffic and designated OTH_THREAT.
+ */
 static void
 assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
     avl_tree_t *RA_hints, tcas_filter_t filter)
@@ -957,6 +984,10 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 	double filter_min = my_pos_3d.z, filter_max = my_pos_3d.z;
 	bool_t vert_filter = B_TRUE;
 
+	/*
+	 * Check if the altitude filter has been satisfied. Non-altitude-
+	 * reporting aircraft cannot become RA threats.
+	 */
 	filter_min -= (filter == TCAS_FILTER_ABV ? SHORT_VERT_FILTER :
 	    NORM_VERT_FILTER);
 	filter_max += (filter == TCAS_FILTER_BLW ? SHORT_VERT_FILTER :
@@ -969,12 +1000,11 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 	if (cpa != NULL) {
 		tcas_RA_hint_t srch = { .acf_id = oacf->acf_id };
 		tcas_RA_hint_t *hint;
-
 		/*
 		 * RA-corrective threat iff:
 		 * 1) reporting an altitude AND either:
-		 * 2a) its CPA point violates the protected volume AND
-		 *	time to CPA is <= tau_RA
+		 * 2a) its CPA point violates the protected volume AND time
+		 *     to CPA is <= tau_RA.
 		 * 2b) its current position violates our protected volume
 		 * The vertical filter is NOT applied to RAs.
 		 */
@@ -988,16 +1018,21 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 		}
 		/*
 		 * If the previous filter didn't upgrade us to a corrective
-		 * threat, we might still derive a threat level from a hint.
+		 * threat (from a preventive), we might still derive an RA
+		 * threat level from a hint.
 		 */
 		hint = avl_find(RA_hints, &srch, NULL);
-		if (hint != NULL && (isnan(tcas_state.initial_ra_vs) ||
-		    (d_v <= sl->zthr_TA || tcas_state.initial_ra_vs -
-		    oacf->vvel > LEVEL_VVEL_THRESH))) {
-			dbg_log(tcas, 1, "bogie %p RA_THREAT(hint|%d)",
-			    oacf->acf_id, hint->level);
-			oacf->threat = hint->level;
-			return;
+		if (hint != NULL) {
+			/* Hints must not exist on initial RAs */
+			ASSERT(!isnan(tcas_state.initial_ra_vs));
+			if (d_v <= sl->zthr_TA || tcas_state.initial_ra_vs -
+			    oacf->vvel > LEVEL_VVEL_THRESH) {
+				dbg_log(tcas, 1, "bogie %p RA_THREAT(hint|%d)",
+				    oacf->acf_id, hint->level);
+				ASSERT3U(hint->level, >=, RA_THREAT_PREV);
+				oacf->threat = hint->level;
+				return;
+			}
 		}
 		/*
 		 * An RA-preventive threat is the same as an RA-corrective
@@ -1007,14 +1042,14 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 		 * us to issue a preventive RA to prevent the aircraft from
 		 * entering the RA vertical extent.
 		 */
-		if (oacf->alt_rptg &&
-		    ((cpa->d_h <= sl->dmod_RA && cpa->d_v <= sl->zthr_TA &&
-		    cpa->d_t <= sl->tau_RA) ||
+		if (oacf->alt_rptg && ((cpa->d_h <= sl->dmod_RA &&
+		    cpa->d_v <= sl->zthr_TA && cpa->d_t <= sl->tau_RA) ||
 		    (d_h <= sl->dmod_RA && d_v <= sl->zthr_TA))) {
 			dbg_log(tcas, 1, "bogie %p RA_THREAT", oacf->acf_id);
 			oacf->threat = RA_THREAT_PREV;
 			return;
 		}
+
 		/*
 		 * TA threat iff (subject to vertical filter being satisfied):
 		 * 1) ALL of the following conditions are true:
@@ -1031,33 +1066,30 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 		if (vert_filter && !oacf->on_ground &&
 		    ((cpa->d_h <= sl->dmod_TA && (!oacf->alt_rptg ||
 		    cpa->d_v <= sl->zthr_TA) && cpa->d_t <= sl->tau_TA) ||
-		    (d_h <= sl->dmod_TA && (!oacf->alt_rptg ||
-		    d_v <= sl->zthr_TA)))) {
+		    (d_h <= sl->dmod_TA &&
+		    (!oacf->alt_rptg || d_v <= sl->zthr_TA)))) {
 			dbg_log(tcas, 1, "bogie %p TA_THREAT", oacf->acf_id);
 			oacf->threat = TA_THREAT;
 			return;
 		}
 	}
+
+	ASSERT3U(oacf->threat, ==, OTH_THREAT);
 	/*
-	 * This condition prevents downgrade of RA threats during evasive
-	 * maneuvers. RAs are downgraded only once we have passed CPA.
+	 * Proximate traffic iff:
+	 * 1) horiz separation within prox traffic dist thresh, AND
+	 * 2a) target doesn't report altitude, OR
+	 * 2b) vert separation within prox traffic altitude threshold
 	 */
-	if (oacf->threat <= TA_THREAT || oacf->cpa == NULL) {
-		/*
-		 * Proximate traffic iff:
-		 * 1) horiz separation within prox traffic dist thresh, AND
-		 * 2a) target doesn't report altitude, OR
-		 * 2b) vert separation within prox traffic altitude threshold
-		 */
-		if (d_h <= PROX_DIST_THRESH && !oacf->on_ground &&
-		    (!oacf->alt_rptg || d_v <= PROX_ALT_THRESH)) {
-			dbg_log(tcas, 1, "bogie %p PROX_THREAT", oacf->acf_id);
-			oacf->threat = PROX_THREAT;
-		} else {
-			dbg_log(tcas, 1, "bogie %p OTH_THREAT", oacf->acf_id);
-			oacf->threat = OTH_THREAT;
-		}
+	if (d_h <= PROX_DIST_THRESH && !oacf->on_ground &&
+	    (!oacf->alt_rptg || d_v <= PROX_ALT_THRESH)) {
+		dbg_log(tcas, 1, "bogie %p PROX_THREAT", oacf->acf_id);
+		oacf->threat = PROX_THREAT;
+		return;
 	}
+
+	dbg_log(tcas, 1, "bogie %p OTH_THREAT", oacf->acf_id);
+	oacf->threat = OTH_THREAT;
 }
 
 static int
@@ -1292,11 +1324,14 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 	avl_tree_t prio;
 	tcas_RA_t *ra, *rra;
 	void *cookie = NULL;
+	const cpa_t *last_cpa = avl_last(cpas);
+
+	ASSERT(last_cpa != NULL);
 
 	/*
-	 * Don't try subsequent RAs if we're too close to the last CPa anyway.
+	 * Don't try subsequent RAs if we're too close to the last CPA anyway.
 	 */
-	if (!initial && ((cpa_t *)avl_last(cpas))->d_t < SUBSEQ_RA_DELAY)
+	if (!initial && last_cpa->d_t < SUBSEQ_RA_DELAY)
 		return (NULL);
 
 	avl_create(&prio, ra_compar, sizeof (tcas_RA_t),
@@ -1570,8 +1605,9 @@ static void
 resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
     const SL_t *sl, avl_tree_t *RA_hints, uint64_t now)
 {
-	bool_t TA_found = B_FALSE, RA_prev_found = B_FALSE,
-	    RA_corr_found = B_FALSE;
+	bool_t TA_found = B_FALSE;
+	bool_t RA_prev_found = B_FALSE;
+	bool_t RA_corr_found = B_FALSE;
 	avl_tree_t RA_cpas;
 	void *cookie;
 
@@ -1588,10 +1624,11 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 	avl_create(&RA_cpas, cpa_compar, sizeof (cpa_t),
 	    offsetof(cpa_t, ra_node));
 
-	if ((RA_corr_found || RA_prev_found) && sl->tau_TA != 0) {
+	if (RA_corr_found || RA_prev_found) {
 		/*
 		 * We've located RA threats (either from direct CPAs or via
-		 * RA_hints).
+		 * RA_hints or via a violation of dmod+zthr for preventive
+		 * encounters).
 		 */
 		tcas_RA_t *ra;
 		double d_t = NAN;
@@ -1646,6 +1683,7 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 					prev_msg = tcas_state.ra->info->msg;
 					free(tcas_state.ra);
 				} else {
+					ASSERT(isnan(tcas_state.initial_ra_vs));
 					/* memorize what VS we started at */
 					tcas_state.initial_ra_vs =
 					    my_acf->vvel;

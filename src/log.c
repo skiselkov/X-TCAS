@@ -207,6 +207,7 @@ xtcas_log_backtrace(void)
 	XPLMDebugString(msg);
 #endif
 	fprintf(stderr, "%s", msg);
+	fflush(stderr);
 
 	free(msg);
 	free(fnames);

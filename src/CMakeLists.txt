@@ -22,9 +22,11 @@ SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h log.h list.h list_impl.h
     math.h pos.h types.h xtcas.h time.h thread.h wav.h snd_sys.h
     riff.h)
 
+SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} -DDEBUG")
+SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG")
+
 if("${TEST_STANDALONE_BUILD}" EQUAL "1")
-	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DTEST_STANDALONE_BUILD -O0 \
-	    -ggdb3")
+	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DTEST_STANDALONE_BUILD")
 	LIST(APPEND SRC test.c)
 	LIST(APPEND HDR test.h)
 else()
