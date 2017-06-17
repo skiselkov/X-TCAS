@@ -1013,7 +1013,7 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		 */
 		if (oacf->alt_rptg && !oacf->on_ground &&
 		    cpa->d_v <= sl->alim_RA && cpa->d_h <= sl->dmod_RA &&
-		    cpa->d_t <= sl->tau_RA && r_vel < APCH_SPD_THRESH) {
+		    cpa->d_t <= sl->tau_RA && cpa->d_t > 0) {
 			dbg_log(threat, 1, "bogie %p RA_CORR(fast) "
 			    "cpa->d_v: %.0f <= %.0f cpa->d_h: %.0f <= %.0f "
 			    "d_t: %.1f", oacf->acf_id, cpa->d_v,
@@ -1056,16 +1056,17 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		 * 3) We are actually closing in.
 		 */
 		if (hint != NULL && r_vel < APCH_SPD_THRESH &&
-		    (!hint->slow_closure || (d_h <= sl->dmod_TA &&
-		    oacf->alt_rptg && d_v <= sl->zthr_TA))) {
+		    oacf->alt_rptg &&
+		    ((d_h <= sl->dmod_TA && d_v <= sl->zthr_TA) ||
+		    (cpa->d_h <= sl->dmod_TA && cpa->d_v <= sl->zthr_TA))) {
 			/* Hints cannot exist on initial RAs */
 			ASSERT3U(tcas_state.adv_state, ==, ADV_STATE_RA);
 			dbg_log(threat, 1, "bogie %p RA_HINT(%d,%d) "
-			    "d_t: %.1f > 0 || (d_h: %.0f <= %.0f "
-			    "&& d_v: %.0f <= %.0f && r_vel: %.0f)",
-			    oacf->acf_id, hint->level,
-			    hint->slow_closure, cpa->d_t, d_h,
-			    sl->dmod_TA, d_v, sl->zthr_TA, r_vel);
+			    "d_t: %.1f > 0 r_vel: %.1f alt_rptg: %d "
+			    "d_h: %.0f|%.0f <= %.0f && d_v: %.0f|%.0f <= %.0f",
+			    oacf->acf_id, hint->level, hint->slow_closure,
+			    cpa->d_t, r_vel, oacf->alt_rptg, cpa->d_h, d_h,
+			    sl->dmod_TA, cpa->d_v, d_v, sl->zthr_TA);
 			ASSERT3U(hint->level, >=, RA_THREAT_PREV);
 			oacf->threat = hint->level;
 			oacf->slow_closure = hint->slow_closure;
@@ -1081,7 +1082,7 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		 */
 		if (oacf->alt_rptg && !oacf->on_ground &&
 		    cpa->d_v <= sl->zthr_RA && cpa->d_h <= sl->dmod_RA &&
-		    cpa->d_t <= sl->tau_RA && r_vel < APCH_SPD_THRESH) {
+		    cpa->d_t <= sl->tau_RA && cpa->d_t > 0) {
 			dbg_log(threat, 1, "bogie %p RA_PREV(fast) d_v: "
 			    "%.0f <= %.0f d_h: %.0f <= %.0f d_t: %.0f",
 			    oacf->acf_id, cpa->d_v, sl->zthr_RA, cpa->d_h,
@@ -1493,8 +1494,7 @@ CAS_logic_normal(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
 		    prev_ra->info->msg : -1u);
 		tcas_RA_sense_t prev_sense = (prev_ra != NULL ?
 		    prev_ra->info->sense : RA_SENSE_LEVEL_OFF);
-		bool_t reversal = (prev_sense != RA_SENSE_LEVEL_OFF &&
-		    ri->sense != RA_SENSE_LEVEL_OFF && prev_sense != ri->sense);
+		bool_t reversal = (prev_ra != NULL && prev_sense != ri->sense);
 		tcas_RA_type_t prev_type = (prev_ra != NULL ?
 		    prev_ra->info->type : -1u);
 		tcas_msg_t msg = ri->msg;
@@ -1562,6 +1562,7 @@ CAS_logic_normal(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
 			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}
+		/* Don't issue DES MORE below 1550ft */
 		if (msg == RA_MSG_DES_MORE &&
 		    agl_at_cpa < INHIBIT_INC_DES_AGL) {
 			dbg_log(ra, 4, "CULLRI(norm) DESMORE(1550/PRED) "

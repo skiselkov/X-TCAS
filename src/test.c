@@ -403,7 +403,7 @@ step_acf(acf_t *acf, uint64_t now, uint64_t step)
 static void
 draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 {
-	int cy = maxy / 2, cx = maxx / 2;
+	int cy = (maxy / 3) * 2, cx = maxx / 2;
 	int x, y;
 	vect2_t xy = VECT2(my_pos.x - acf->pos.x, my_pos.y - acf->pos.y);
 	int z_rel = acf->pos.z - my_pos.z;
@@ -541,15 +541,15 @@ draw_gui(WINDOW *win)
 	/* draw the position dots 10km around the origin point */
 	for (int i = (int)my_acf.pos.x / 1000 - kx / 2;
 	    i <= (int)my_acf.pos.x / 1000 + kx / 2; i++) {
-		for (int j = (int)my_acf.pos.y / 1000 - ky / 2;
-		    j <= (int)my_acf.pos.y / 1000 + ky / 2; j++) {
+		for (int j = (int)my_acf.pos.y / 1000 - (ky / 3);
+		    j <= (int)my_acf.pos.y / 1000 + 2 * (ky / 3); j++) {
 			vect2_t v = VECT2(i * 1000 - my_acf.pos.x,
 			    j * 1000 - my_acf.pos.y);
 			int x, y;
 			v = vect2_rot(v, -my_acf.trk);
 			x = maxx / 2 + v.x / scaleh;
-			y = maxy / 2 - v.y / scalev;
-			if (x < 5 || x + 10 >= maxx ||
+			y = 2 * (maxy / 3) - v.y / scalev;
+			if (x < 5 || x + 11 >= maxx ||
 			    y < 4 || y >= maxy)
 				continue;
 			move(y, x);
@@ -565,7 +565,7 @@ draw_gui(WINDOW *win)
 		}
 	}
 
-	move(maxy / 2, maxx / 2);
+	move(2 * (maxy / 3), maxx / 2);
 	printw("^");
 	for (acf_t *acf = list_head(&other_acf); acf != NULL;
 	    acf = list_next(&other_acf, acf))
