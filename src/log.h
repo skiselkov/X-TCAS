@@ -35,6 +35,9 @@ typedef struct {
 	int	cpa;
 	int	test;
 	int	xplane;
+	int	sl;
+	int	contact;
+	int	threat;
 } dbg_info_t;
 
 extern dbg_info_t xtcas_dbg;

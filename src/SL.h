@@ -25,19 +25,6 @@
 extern "C" {
 #endif
 
-/*
- * These maximum parameters constrain the CPA search algorithm (if a CPA
- * is over them, we don't even examine it), but they depend on the exact
- * SL values used. Basically, the maximum values are designed so as to
- * be at least 2x as much as the largest distance & altitude in the highest
- * SL, but to also efficiently cull away as many CPAs as possible, so we
- * don't have to waste time resolving them.
- */
-enum {
-	CPA_MAX_D_H =	2500,	/* distance horizontal, meters */
-	CPA_MAX_D_V =	400	/* distance vertical, meters */
-};
-
 #define	INHIBIT_AUDIO		FEET2MET(500)
 #define	INHIBIT_DES_AGL		FEET2MET(1100)
 #define	INHIBIT_INC_DES_AGL	FEET2MET(1550)

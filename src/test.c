@@ -501,6 +501,22 @@ draw_acf(vect3_t my_pos, double my_trk, acf_t *acf, int maxy, int maxx)
 }
 
 static void
+draw_RA_band(int maxy, int maxx, double min, double max, int color, char symbol)
+{
+	if (min == max)
+		return;
+	attron(COLOR_PAIR(color));
+	for (int i = -20; i < 20; i++) {
+		if (min <= i && i <= max && (maxy / 2 - i) < maxy &&
+		    (maxy / 2 - i) > 3) {
+			move(maxy / 2 - i, maxx - 1);
+			printw("%c", symbol);
+		}
+	}
+	attroff(COLOR_PAIR(color));
+}
+
+static void
 draw_gui(WINDOW *win)
 {
 	int maxx = 80, maxy = 25;
@@ -607,36 +623,9 @@ draw_gui(WINDOW *win)
 		    my_acf.vs);
 	}
 
-	if (RA_min_red_lo != RA_max_red_lo) {
-		attron(COLOR_PAIR(3));
-		for (int i = -20; i < 20; i++) {
-			if (RA_min_red_lo <= i && i <= RA_max_red_lo) {
-				move(maxy / 2 - i, maxx - 1);
-				printw("X");
-			}
-		}
-		attroff(COLOR_PAIR(3));
-	}
-	if (RA_min_red_hi != RA_max_red_hi) {
-		attron(COLOR_PAIR(3));
-		for (int i = -20; i < 20; i++) {
-			if (RA_min_red_hi <= i && i <= RA_max_red_hi) {
-				move(maxy / 2 - i, maxx - 1);
-				printw("X");
-			}
-		}
-		attroff(COLOR_PAIR(3));
-	}
-	if (RA_min_green != RA_max_green) {
-		attron(COLOR_PAIR(4));
-		for (int i = -20; i < 20; i++) {
-			if (RA_min_green <= i && i <= RA_max_green) {
-				move(maxy / 2 - i, maxx - 1);
-				printw("O");
-			}
-		}
-		attroff(COLOR_PAIR(4));
-	}
+	draw_RA_band(maxy, maxx, RA_min_red_lo, RA_max_red_lo, 3, 'X');
+	draw_RA_band(maxy, maxx, RA_min_red_hi, RA_max_red_hi, 3, 'X');
+	draw_RA_band(maxy, maxx, RA_min_green, RA_max_green, 4, 'O');
 
 	move(0, 0);
 	switch (RA_adv) {
@@ -757,6 +746,12 @@ main(int argc, char **argv)
 				xtcas_dbg.ra += debug_strength;
 			} else if (strcmp(optarg, "cpa") == 0) {
 				xtcas_dbg.cpa += debug_strength;
+			} else if (strcmp(optarg, "sl") == 0) {
+				xtcas_dbg.sl += debug_strength;
+			} else if (strcmp(optarg, "contact") == 0) {
+				xtcas_dbg.contact += debug_strength;
+			} else if (strcmp(optarg, "threat") == 0) {
+				xtcas_dbg.threat += debug_strength;
 			} else {
 				fprintf(stderr, "Invalid argument to -D\n");
 				return (1);

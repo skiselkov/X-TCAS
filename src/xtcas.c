@@ -61,6 +61,7 @@
 #define	ON_GROUND_AGL_THRESH		FEET2MET(380)
 #define	ON_GROUND_AGL_CHK_THRESH	FEET2MET(1700)
 #define	INF_VS				FPM2MPS(100000)
+#define	APCH_SPD_THRESH			KT2MPS(40)
 
 #define	PRINTF_ACF_FMT "rdy:%d  alt_rptg:%d  pos:%3.04f/%2.4f/%4.1f  " \
 	"agl:%.0f  gs:%.1f  trk:%.0f  trk_v:%.2fx%.2f  vvel:%.1f  ongnd:%d"
@@ -93,13 +94,14 @@ typedef struct tcas_acf {
 	double	agl;		/* altitude above ground level in meters */
 	double	gs;		/* true groundspeed (horizontal) in m/s */
 	double	trk;		/* true track in degrees */
-	vect2_t	trk_v;		/* true track as unit vector */
+	vect2_t	trk_v;		/* true track as speed vector at gs */
 	double	vvel;		/* computed vertical velocity in m/s */
 	double	d_vvel;		/* change in vvel in m/s^2 */
 	bool_t	trend_data_ready; /* indicates if gs/trk/vvel is available */
 	bool_t	up_to_date;	/* used for efficient position updates */
 	bool_t	on_ground;	/* on-ground condition */
 	cpa_t	*cpa;		/* CPA this aircraft participates in */
+	bool_t	slow_closure;	/* for RA threats that are closing in slow */
 	tcas_threat_t	threat;	/* type of TCAS threat */
 
 	avl_node_t	node;		/* used by other_acf_glob tree */
@@ -148,6 +150,7 @@ typedef struct {
 typedef struct {
 	void		*acf_id;
 	tcas_threat_t	level;
+	bool_t		slow_closure;
 	avl_node_t	node;
 } tcas_RA_hint_t;
 
@@ -617,10 +620,12 @@ update_my_position(double t)
 	    xtcas_obj_pos_get_trk(&my_acf_glob.pos_upd, &my_acf_glob.trk) &&
 	    xtcas_obj_pos_get_vvel(&my_acf_glob.pos_upd, &my_acf_glob.vvel,
 	    &my_acf_glob.d_vvel));
-	if (my_acf_glob.trend_data_ready)
-		my_acf_glob.trk_v = hdg2dir(my_acf_glob.trk);
+	if (my_acf_glob.trend_data_ready) {
+		my_acf_glob.trk_v = vect2_set_abs(hdg2dir(my_acf_glob.trk),
+		    my_acf_glob.gs);
+	}
 
-	dbg_log(tcas, 1, "my_pos: " PRINTF_ACF_FMT,
+	dbg_log(contact, 1, "my_pos: " PRINTF_ACF_FMT,
 	    PRINTF_ACF_ARGS(&my_acf_glob));
 }
 
@@ -700,8 +705,8 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		    xtcas_obj_pos_get_trk(&acf->pos_upd, &acf->trk) &&
 		    xtcas_obj_pos_get_vvel(&acf->pos_upd, &acf->vvel,
 		    &my_acf_glob.d_vvel));
-		my_acf_glob.trk_v = (acf->trend_data_ready) ?
-		    hdg2dir(my_acf_glob.trk) : NULL_VECT2;
+		acf->trk_v = (acf->trend_data_ready) ?
+		    vect2_set_abs(hdg2dir(acf->trk), acf->gs) : NULL_VECT2;
 		acf->on_ground = (acf->alt_rptg &&
 		    acf->cur_pos.elev < gnd_level + ON_GROUND_AGL_THRESH);
 		/* mark acf as up-to-date */
@@ -724,7 +729,7 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		}
 	}
 
-	dbg_log(tcas, 1, "total bogies: %lu", avl_numnodes(&other_acf_glob));
+	dbg_log(contact, 1, "total bogies: %lu", avl_numnodes(&other_acf_glob));
 
 	free(pos);
 }
@@ -806,7 +811,7 @@ cpa_compar(const void *a, const void *b)
  * @param pos_b Intruder aircraft's position at CPA.
  */
 static cpa_t *
-make_cpa(unsigned d_t, tcas_acf_t *acf_a, tcas_acf_t *acf_b,
+make_cpa(double d_t, tcas_acf_t *acf_a, tcas_acf_t *acf_b,
     vect3_t pos_a, vect3_t pos_b)
 {
 	cpa_t *cpa = calloc(1, sizeof (*cpa));
@@ -870,8 +875,7 @@ static void
 compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 {
 	vect3_t my_pos_3d = my_acf->cur_pos_3d;
-	vect2_t my_dir = vect2_set_abs(my_acf->trk_v, my_acf->gs);
-	vect3_t my_vel = VECT3(my_dir.x, my_dir.y, my_acf->vvel);
+	vect3_t my_vel = VECT3(my_acf->trk_v.x, my_acf->trk_v.y, my_acf->vvel);
 
 	avl_create(cpas, cpa_compar, sizeof (cpa_t), offsetof(cpa_t, node));
 
@@ -879,9 +883,8 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 	    acf = AVL_NEXT(other_acf, acf)) {
 		vect2_t dir;
 		vect3_t pos_3d, vel, rel_vel, cpa_pos, my_cpa_pos;
-		double t_cpa, d_h, d_v;
+		double d_vvel, t_cpa;
 		cpa_t *cpa;
-		double d_vvel;
 
 		/*
 		 * Don't compute CPAs for contacts that either:
@@ -889,42 +892,35 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		 * 2) Ground speed is zero (false contact).
 		 * 3) Fall outside of our maximum vertical filter boundaries.
 		 */
-		if (!acf->trend_data_ready || acf->gs == 0 ||
-		    ABS(acf->cur_pos.elev - my_acf->cur_pos.elev) >
-		    NORM_VERT_FILTER)
+		if (!acf->trend_data_ready || !my_acf->trend_data_ready ||
+		    acf->gs == 0 || ABS(acf->cur_pos.elev -
+		    my_acf->cur_pos.elev) > NORM_VERT_FILTER)
 			continue;
 
 		d_vvel = (acf->d_vvel >= D_VVEL_MAN_THRESH ? acf->d_vvel : 0);
 		pos_3d = acf->cur_pos_3d;
-		dir = vect2_set_abs(hdg2dir(acf->trk), acf->gs);
+		dir = acf->trk_v;
 		vel = VECT3(dir.x, dir.y, acf->vvel + d_vvel * D_VVEL_MAN_TIME);
 		rel_vel = vect3_sub(vel, my_vel);
-		t_cpa = (-(pos_3d.x * rel_vel.x) - (pos_3d.y * rel_vel.y) -
-		    (pos_3d.z - rel_vel.z)) /
-		    (POW2(rel_vel.x) + POW2(rel_vel.y) + POW2(rel_vel.z));
-
-		/* If the CPA is in the past, don't even bother. */
-		if (t_cpa <= 0) {
-			dbg_log(cpa, 2, "bogie %p t_cpa: %.1f, culling",
-			    acf->acf_id, t_cpa);
-			continue;
+		if (!IS_ZERO_VECT3(rel_vel)) {
+			t_cpa = floor((-(pos_3d.x * rel_vel.x) -
+			    (pos_3d.y * rel_vel.y) - (pos_3d.z - rel_vel.z)) /
+			    (POW2(rel_vel.x) + POW2(rel_vel.y) +
+			    POW2(rel_vel.z)));
+			/*
+			 * If CPA is in the past, the current position is the
+			 * CPA. */
+			t_cpa = MAX(t_cpa, 0);
+		} else {
+			t_cpa = 0;
 		}
 
 		cpa_pos = vect3_add(pos_3d, vect3_scmul(vel, t_cpa));
 		my_cpa_pos = vect3_add(my_pos_3d, vect3_scmul(my_vel, t_cpa));
-		/* If we are too far apart at CPA, don't even bother. */
-		d_h = vect2_abs(vect2_sub(VECT3_TO_VECT2(cpa_pos),
-		    VECT3_TO_VECT2(my_cpa_pos)));
-		d_v = ABS(cpa_pos.z - my_cpa_pos.z);
-		if (d_h > CPA_MAX_D_H || d_v > CPA_MAX_D_V) {
-			dbg_log(cpa, 2, "bogie %p d_h:%.0f d_v:%.0f, culling",
-			    acf->acf_id, d_h, d_v);
-			continue;
-		}
 
 		cpa = make_cpa(t_cpa, my_acf, acf, my_cpa_pos, cpa_pos);
-		dbg_log(cpa, 1, "bogie %p cpa d_t:%.1f a:%.0fx%.0fx%.0f "
-		    "b:%.0fx%.0fx%.0f d_h:%.0f d_v:%.0f",
+		dbg_log(cpa, 1, "bogie %p cpa d_t:%.1f pos_a:%.0fx%.0fx%.0f "
+		    "pos_b:%.0fx%.0fx%.0f d_h:%.0f d_v:%.0f",
 		    acf->acf_id, cpa->d_t,
 		    cpa->pos_a.x, cpa->pos_a.y, cpa->pos_a.z,
 		    cpa->pos_b.x, cpa->pos_b.y, cpa->pos_b.z,
@@ -974,15 +970,18 @@ destroy_CPAs(avl_tree_t *cpas)
  * 6) Lastly, any other intruder is other traffic and designated OTH_THREAT.
  */
 static void
-assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
+assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
     avl_tree_t *RA_hints, tcas_filter_t filter)
 {
 	double d_h = vect2_abs(vect2_sub(VECT3_TO_VECT2(oacf->cur_pos_3d),
-	    VECT3_TO_VECT2(my_pos_3d)));
-	double d_v = ABS(my_pos_3d.z - oacf->cur_pos_3d.z);
+	    VECT3_TO_VECT2(my_acf->cur_pos_3d)));
+	double d_v = ABS(my_acf->cur_pos_3d.z - oacf->cur_pos_3d.z);
 	cpa_t *cpa = oacf->cpa;
-	double filter_min = my_pos_3d.z, filter_max = my_pos_3d.z;
+	double filter_min = my_acf->cur_pos_3d.z;
+	double filter_max = my_acf->cur_pos_3d.z;
 	bool_t vert_filter = B_TRUE;
+	tcas_RA_hint_t srch = { .acf_id = oacf->acf_id };
+	tcas_RA_hint_t *hint;
 
 	/*
 	 * Check if the altitude filter has been satisfied. Non-altitude-
@@ -997,78 +996,147 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 		    oacf->cur_pos.elev <= filter_max);
 	}
 
-	if (cpa != NULL) {
-		tcas_RA_hint_t srch = { .acf_id = oacf->acf_id };
-		tcas_RA_hint_t *hint;
+	hint = avl_find(RA_hints, &srch, NULL);
+	if (cpa != NULL && (!oacf->on_ground || hint != NULL)) {
+		double r_vel = ((cpa->d_t == 0) ? 1 : -1) *
+		    vect2_abs(vect2_sub(my_acf->trk_v, oacf->trk_v));
+
 		/*
-		 * RA-corrective threat iff:
-		 * 1) reporting an altitude AND either:
-		 * 2a) its CPA point violates the protected volume AND time
-		 *     to CPA is <= tau_RA.
-		 * 2b) its current position violates our protected volume
-		 * The vertical filter is NOT applied to RAs.
+		 * Fast RA-corrective threat iff:
+		 * 1) reporting an altitude AND
+		 * 2) NOT on the ground AND
+		 * 3) CPA d_v is below ALIM (thus a correction is required)
+		 *     AND
+		 * 4) its CPA point violates the RA-protected volume AND
+		 * 5) time to CPA is <= tau_RA.
+		 * 6) we are actually closing in
 		 */
 		if (oacf->alt_rptg && !oacf->on_ground &&
-		    ((cpa->d_h <= sl->dmod_RA && cpa->d_v <= sl->zthr_RA &&
-		    cpa->d_t <= sl->tau_RA) ||
-		    (d_h <= sl->dmod_RA && d_v <= sl->zthr_RA))) {
-			dbg_log(tcas, 1, "bogie %p RA_THREAT", oacf->acf_id);
+		    cpa->d_v <= sl->alim_RA && cpa->d_h <= sl->dmod_RA &&
+		    cpa->d_t <= sl->tau_RA && r_vel < APCH_SPD_THRESH) {
+			dbg_log(threat, 1, "bogie %p RA_CORR(fast) "
+			    "cpa->d_v: %.0f <= %.0f cpa->d_h: %.0f <= %.0f "
+			    "d_t: %.1f", oacf->acf_id, cpa->d_v,
+			    sl->alim_RA, cpa->d_h, sl->dmod_RA, cpa->d_t);
 			oacf->threat = RA_THREAT_CORR;
+			oacf->slow_closure = B_FALSE;
 			return;
 		}
 		/*
-		 * If the previous filter didn't upgrade us to a corrective
-		 * threat (from a preventive), we might still derive an RA
-		 * threat level from a hint.
+		 * Slow RA-corrective threat iff:
+		 * 1) reporting an altitude AND
+		 * 2) NOT on the ground AND
+		 * 2) its present position violates the RA-protected volume AND
+		 * 3a) EITHER the relative velocity is below the approaching
+		 *    threshold (i.e. intruder is approaching us),
+		 * 3b) OR intruder is moving away so slowly, that they won't
+		 *    clear our the horizontal boundaries of our protected
+		 *    volume in less than 5 seconds.
+		 * The vertical filter is NOT applied to RAs.
 		 */
-		hint = avl_find(RA_hints, &srch, NULL);
-		if (hint != NULL) {
-			/* Hints must not exist on initial RAs */
-			ASSERT(!isnan(tcas_state.initial_ra_vs));
-			if (d_v <= sl->zthr_TA || tcas_state.initial_ra_vs -
-			    oacf->vvel > LEVEL_VVEL_THRESH) {
-				dbg_log(tcas, 1, "bogie %p RA_THREAT(hint|%d)",
-				    oacf->acf_id, hint->level);
-				ASSERT3U(hint->level, >=, RA_THREAT_PREV);
-				oacf->threat = hint->level;
-				return;
-			}
+		if (oacf->alt_rptg && !oacf->on_ground && d_v <= sl->alim_RA &&
+		    d_h <= sl->dmod_RA && (r_vel <= APCH_SPD_THRESH ||
+		    (sl->dmod_RA - d_h) / r_vel > INITIAL_RA_DELAY)) {
+			dbg_log(threat, 1, "bogie %p RA_CORR(slow) d_v: "
+			    "%.0f <= %.0f d_h: %.0f <= %.0f d_t: %.1f",
+			    oacf->acf_id, d_v, sl->alim_RA, d_h, sl->dmod_RA,
+			    cpa->d_t);
+			oacf->threat = RA_THREAT_CORR;
+			oacf->slow_closure = B_TRUE;
+			return;
+		}
+		/*
+		 * If the previous filter didn't find a corrective threat, we
+		 * might still derive an RA threat level from a previous hint.
+		 * However, only do so if:
+		 * 1) The current position violates the TA-protected volume
+		 *    (to avoid issuing a TA against an RA threat).
+		 * 2) The target is reporting altitude (if they stop
+		 *    reporting, we need to drop the RA).
+		 * 3) We are actually closing in.
+		 */
+		if (hint != NULL && r_vel < APCH_SPD_THRESH &&
+		    (!hint->slow_closure || (d_h <= sl->dmod_TA &&
+		    oacf->alt_rptg && d_v <= sl->zthr_TA))) {
+			/* Hints cannot exist on initial RAs */
+			ASSERT3U(tcas_state.adv_state, ==, ADV_STATE_RA);
+			dbg_log(threat, 1, "bogie %p RA_HINT(%d,%d) "
+			    "d_t: %.1f > 0 || (d_h: %.0f <= %.0f "
+			    "&& d_v: %.0f <= %.0f && r_vel: %.0f)",
+			    oacf->acf_id, hint->level,
+			    hint->slow_closure, cpa->d_t, d_h,
+			    sl->dmod_TA, d_v, sl->zthr_TA, r_vel);
+			ASSERT3U(hint->level, >=, RA_THREAT_PREV);
+			oacf->threat = hint->level;
+			oacf->slow_closure = hint->slow_closure;
+			return;
 		}
 		/*
 		 * An RA-preventive threat is the same as an RA-corrective
 		 * threat, but the protected volume computation is modified
 		 * such that the horizontal extent remains the same, but
-		 * the vertical volume is on the TA boundaries. This allows
+		 * the vertical volume is on the RA boundaries. This allows
 		 * us to issue a preventive RA to prevent the aircraft from
 		 * entering the RA vertical extent.
 		 */
-		if (oacf->alt_rptg && ((cpa->d_h <= sl->dmod_RA &&
-		    cpa->d_v <= sl->zthr_TA && cpa->d_t <= sl->tau_RA) ||
-		    (d_h <= sl->dmod_RA && d_v <= sl->zthr_TA))) {
-			dbg_log(tcas, 1, "bogie %p RA_THREAT", oacf->acf_id);
+		if (oacf->alt_rptg && !oacf->on_ground &&
+		    cpa->d_v <= sl->zthr_RA && cpa->d_h <= sl->dmod_RA &&
+		    cpa->d_t <= sl->tau_RA && r_vel < APCH_SPD_THRESH) {
+			dbg_log(threat, 1, "bogie %p RA_PREV(fast) d_v: "
+			    "%.0f <= %.0f d_h: %.0f <= %.0f d_t: %.0f",
+			    oacf->acf_id, cpa->d_v, sl->zthr_RA, cpa->d_h,
+			    sl->dmod_RA, cpa->d_t);
 			oacf->threat = RA_THREAT_PREV;
+			oacf->slow_closure = B_FALSE;
+			return;
+		}
+		/*
+		 * The preventive version of the slow approach corrective RA.
+		 */
+		if (oacf->alt_rptg && !oacf->on_ground && d_v <= sl->zthr_RA &&
+		    d_h <= sl->dmod_RA && (r_vel < APCH_SPD_THRESH ||
+		    (sl->dmod_RA - d_h) / r_vel > INITIAL_RA_DELAY)) {
+			dbg_log(threat, 1, "bogie %p RA_PREV(slow) d_v: "
+			    "%.0f <= %.0f d_h: %.0f <= %.0f d_t: %.0f",
+			    oacf->acf_id, d_v, sl->zthr_RA, d_h, sl->dmod_RA,
+			    cpa->d_t);
+			oacf->threat = RA_THREAT_PREV;
+			oacf->slow_closure = B_TRUE;
 			return;
 		}
 
 		/*
-		 * TA threat iff (subject to vertical filter being satisfied):
-		 * 1) ALL of the following conditions are true:
-		 *	1a) horiz separation at CPA violates protected volume
-		 *	1b) the aircraft DOESN'T report altitude, OR vert
-		 *	    separation at CPA violates protected volume
-		 *	1c) time to CPA <= tau_TA
-		 * 2) OR, ALL of the following conditions are true:
-		 *	2a) horiz separation NOW violates protected volume
-		 *	2b) the aircraft DOESN'T report altitude, OR vert
-		 *	    separation NOW violates protected volume
-		 *	2c) time to CPA <= tau_TA
+		 * Fast TA threat if:
+		 * 1) The vertical filter is satisfied AND
+		 * 2) The aircraft is NOT declared to be on the ground AND
+		 * 3) horiz separation at CPA violates protected volume AND
+		 * 4) the aircraft is NOT reporting altitude, OR vert
+		 *    separation at CPA violates protected volume
+		 * 5) time to CPA <= tau_TA
+		 * 6) relative velocity indicates we're approaching
 		 */
 		if (vert_filter && !oacf->on_ground &&
-		    ((cpa->d_h <= sl->dmod_TA && (!oacf->alt_rptg ||
-		    cpa->d_v <= sl->zthr_TA) && cpa->d_t <= sl->tau_TA) ||
-		    (d_h <= sl->dmod_TA &&
-		    (!oacf->alt_rptg || d_v <= sl->zthr_TA)))) {
-			dbg_log(tcas, 1, "bogie %p TA_THREAT", oacf->acf_id);
+		    cpa->d_h <= sl->dmod_TA && (!oacf->alt_rptg ||
+		    cpa->d_v <= sl->zthr_TA) && cpa->d_t <= sl->tau_TA &&
+		    r_vel < APCH_SPD_THRESH) {
+			dbg_log(threat, 1, "bogie %p TA(fast)", oacf->acf_id);
+			oacf->threat = TA_THREAT;
+			return;
+		}
+		/*
+		 * Slow TA threat if:
+		 * 1) The vertical filter is satisfied AND
+		 * 2) The aircraft is NOT declared to be on the ground AND
+		 * 3) horiz separation NOW violates protected volume AND
+		 * 4) the relative velocity is below the approaching
+		 *    threshold (i.e. intruder is approaching us)
+		 * 5) the aircraft is NOT reporting altitude, OR vert
+		 *    separation NOW violates protected volume
+		 */
+		if (vert_filter && !oacf->on_ground &&
+		    d_h <= sl->dmod_TA && r_vel < APCH_SPD_THRESH &&
+		    (!oacf->alt_rptg || d_v <= sl->zthr_TA)) {
+			dbg_log(threat, 1, "bogie %p TA(slow)", oacf->acf_id);
 			oacf->threat = TA_THREAT;
 			return;
 		}
@@ -1083,19 +1151,36 @@ assign_threat_level(vect3_t my_pos_3d, tcas_acf_t *oacf, const SL_t *sl,
 	 */
 	if (d_h <= PROX_DIST_THRESH && !oacf->on_ground &&
 	    (!oacf->alt_rptg || d_v <= PROX_ALT_THRESH)) {
-		dbg_log(tcas, 1, "bogie %p PROX_THREAT", oacf->acf_id);
+		dbg_log(threat, 1, "bogie %p PROX", oacf->acf_id);
 		oacf->threat = PROX_THREAT;
 		return;
 	}
 
-	dbg_log(tcas, 1, "bogie %p OTH_THREAT", oacf->acf_id);
+	dbg_log(threat, 1, "bogie %p OTH", oacf->acf_id);
 	oacf->threat = OTH_THREAT;
 }
 
+static const tcas_RA_t *
+least_departing_RA(const tcas_RA_t *a, const tcas_RA_t *b)
+{
+	const tcas_acf_t *my_acf = ((cpa_t *)avl_first(a->cpas))->acf_a;
+	double init_vs = roundmul(tcas_state.initial_ra_vs, ALT_ROUND_MUL);
+	double cur_vs = roundmul(my_acf->vvel, ALT_ROUND_MUL);
+	double d_vs_a = fabs(init_vs - (cur_vs + a->vs_corr_reqd));
+	double d_vs_b = fabs(init_vs - (cur_vs + b->vs_corr_reqd));
+
+	if (d_vs_a < d_vs_b)
+		return (a);
+	if (d_vs_a > d_vs_b)
+		return (b);
+	return (NULL);
+}
+
 static int
-ra_compar(const void *ra_a, const void *ra_b)
+ra_compar_normal(const void *ra_a, const void *ra_b)
 {
 	const tcas_RA_t *a = ra_a, *b = ra_b;
+	const tcas_RA_t *x;
 
 	/* RAs can only be sorted if they refer to the same encounter */
 	ASSERT3P(a->cpas, ==, b->cpas);
@@ -1170,18 +1255,11 @@ ra_compar(const void *ra_a, const void *ra_b)
 		return (1);
 
 	/* pick the RA departing least from our original VS */
-	if (!isnan(tcas_state.initial_ra_vs)) {
-		tcas_acf_t *my_acf = ((cpa_t *)avl_first(a->cpas))->acf_a;
-		double init_vs = roundmul(tcas_state.initial_ra_vs,
-		    ALT_ROUND_MUL);
-		double cur_vs = roundmul(my_acf->vvel, ALT_ROUND_MUL);
-		double d_vs_a = fabs(init_vs - (cur_vs + a->vs_corr_reqd));
-		double d_vs_b = fabs(init_vs - (cur_vs + b->vs_corr_reqd));
-		if (d_vs_a < d_vs_b)
-			return (-1);
-		if (d_vs_a > d_vs_b)
-			return (1);
-	}
+	x = least_departing_RA(a, b);
+	if (x == a)
+		return (-1);
+	if (x == b)
+		return (1);
 
 	/* pick the RA requiring the minimum VS correction */
 	if (ABS(a->vs_corr_reqd) < ABS(b->vs_corr_reqd))
@@ -1201,6 +1279,47 @@ ra_compar(const void *ra_a, const void *ra_b)
 		return (-1);
 	if (a->info->type == RA_TYPE_CORRECTIVE &&
 	    b->info->type == RA_TYPE_PREVENTIVE)
+		return (1);
+
+	/* final choice - simply pick RA info that comes first */
+	if (a->info < b->info)
+		return (-1);
+	else
+		return (1);
+}
+
+static int
+ra_compar_slow(const void *ra_a, const void *ra_b)
+{
+	const tcas_RA_t *a = ra_a, *b = ra_b;
+	const tcas_RA_t *x;
+
+	if (a->info == b->info) {
+		ASSERT(memcmp(a, b, offsetof(tcas_RA_t, node)) == 0);
+		return (0);
+	}
+
+	if (a->crossing && b->crossing) {
+		if (a->info < b->info)
+			return (-1);
+		else
+			return (1);
+	}
+	if (!a->crossing && b->crossing)
+		return (-1);
+	if (a->crossing && !b->crossing)
+		return (1);
+
+	x = least_departing_RA(a, b);
+	if (x == a)
+		return (-1);
+	if (x == b)
+		return (1);
+
+	/* pick the RA requiring the minimum VS correction */
+	if (ABS(a->vs_corr_reqd) < ABS(b->vs_corr_reqd))
+		return (-1);
+	if (ABS(a->vs_corr_reqd) > ABS(b->vs_corr_reqd))
 		return (1);
 
 	/* final choice - simply pick RA info that comes first */
@@ -1315,26 +1434,55 @@ check_black_band(const tcas_RA_info_t *ri, const tcas_acf_t *my_acf,
 }
 
 static tcas_RA_t *
-CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
-    const SL_t *sl, bool_t prev_only)
+ra_construct(const tcas_acf_t *my_acf, const tcas_RA_info_t *ri,
+    avl_tree_t *cpas, const SL_t *sl, double delay_t, double accel,
+    bool_t reversal)
+{
+	tcas_RA_t *ra = calloc(1, sizeof (*ra));
+
+	ra->info = ri;
+	ra->cpas = cpas;
+	ra->sl = sl;
+	ra->reversal = reversal;
+	ra->min_sep = 1e10;
+	for (cpa_t *cpa = avl_first(cpas); cpa != NULL;
+	    cpa = AVL_NEXT(cpas, cpa)) {
+		double sep = compute_separation(my_acf, cpa, ri, delay_t,
+		    accel);
+		ra->min_sep = MIN(sep, ra->min_sep);
+		/*
+		 * An encounter is crossing if either:
+		 * 1) the RA sense is upward and at CPA our elev would
+		 *    have been below the intruder (+ some margin), OR
+		 * 2) the RA sense is downward and at CPA our elev
+		 *    would have been above the intruder
+		 */
+		ra->crossing |= ((ri->sense == RA_SENSE_UPWARD &&
+		    cpa->pos_b.z - cpa->pos_a.z > EQ_ALT_THRESH) ||
+		    (ri->sense == RA_SENSE_DOWNWARD &&
+		    cpa->pos_a.z - cpa->pos_b.z > EQ_ALT_THRESH));
+	}
+	ASSERT(isfinite(ra->min_sep));
+	ra->alim_achieved = (ra->min_sep >= sl->alim_RA);
+	/*
+	 * min_sep is computed with a maneuver in mind. We want to
+	 * nullify that and provide some buffer so that another RA
+	 * won't be triggered. So we use the TA zthr instead of RA.
+	 */
+	ra->zthr_achieved = (ra->min_sep >= sl->zthr_TA);
+
+	return (ra);
+}
+
+static void
+CAS_logic_normal(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
+    avl_tree_t *cpas, const SL_t *sl, bool_t prev_only, avl_tree_t *prio)
 {
 	bool_t initial = (prev_ra == NULL);
 	double delay_t = (initial ? INITIAL_RA_DELAY : SUBSEQ_RA_DELAY);
 	double accel = (initial ? INITIAL_RA_D_VVEL : SUBSEQ_RA_D_VVEL);
-	avl_tree_t prio;
-	tcas_RA_t *ra, *rra;
-	void *cookie = NULL;
-	const cpa_t *last_cpa = avl_last(cpas);
 
-	ASSERT(last_cpa != NULL);
-
-	/*
-	 * Don't try subsequent RAs if we're too close to the last CPA anyway.
-	 */
-	if (!initial && last_cpa->d_t < SUBSEQ_RA_DELAY)
-		return (NULL);
-
-	avl_create(&prio, ra_compar, sizeof (tcas_RA_t),
+	avl_create(prio, ra_compar_normal, sizeof (tcas_RA_t),
 	    offsetof(tcas_RA_t, node));
 
 	for (int i = 0; i < NUM_RA_INFOS; i++) {
@@ -1349,69 +1497,125 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 		    ri->sense != RA_SENSE_LEVEL_OFF && prev_sense != ri->sense);
 		tcas_RA_type_t prev_type = (prev_ra != NULL ?
 		    prev_ra->info->type : -1u);
-		tcas_msg_t msg;
+		tcas_msg_t msg = ri->msg;
 		double penalty = 0;
+		tcas_RA_t *ra;
 
 		ASSERT3U(ri->msg, >=, 0);
 		ASSERT3U(ri->msg, <, RA_NUM_MSGS);
 
 		/* ri must allow initial/subseq ann as necessary */
 		if ((initial && !ri->initial) || (!initial && !ri->subseq)) {
-			dbg_log(ra, 4, "CULLRI init/subseq " PRINTF_RI_FMT,
-			    PRINTF_RI_ARGS(ri));
+			dbg_log(ra, 4, "CULLRI(norm) init/subseq "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}
 		/* ri must satisfy input VS condition */
 		if (my_acf->vvel < ri->vs.in.min ||
 		    my_acf->vvel > ri->vs.in.max) {
-			dbg_log(ra, 4, "CULLRI in.vs " PRINTF_RI_FMT,
+			dbg_log(ra, 4, "CULLRI(norm) in.vs " PRINTF_RI_FMT,
 			    PRINTF_RI_ARGS(ri));
 			continue;
 		}
 		/* if performing a sense reversal, ri must allow it */
 		if (reversal && (int)ri->rev_msg == -1) {
-			dbg_log(ra, 4, "CULLRI REV " PRINTF_RI_FMT,
+			dbg_log(ra, 4, "CULLRI(norm) REV " PRINTF_RI_FMT,
 			    PRINTF_RI_ARGS(ri));
 			continue;
 		}
 		/* select preventive-only RAs if requested */
 		if (prev_only && ri->type != RA_TYPE_PREVENTIVE) {
-			dbg_log(ra, 4, "CULLRI PREV " PRINTF_RI_FMT,
+			dbg_log(ra, 4, "CULLRI(norm) PREV " PRINTF_RI_FMT,
 			    PRINTF_RI_ARGS(ri));
 			continue;
 		}
-
-		ra = calloc(1, sizeof (*ra));
-		ra->info = ri;
-		ra->cpas = cpas;
-		ra->sl = sl;
-		ra->reversal = reversal;
-		ra->min_sep = 1e10;
-		for (cpa_t *cpa = avl_first(cpas); cpa != NULL;
-		    cpa = AVL_NEXT(cpas, cpa)) {
-			double sep = compute_separation(my_acf, cpa, ri,
-			    delay_t, accel);
-			ra->min_sep = MIN(sep, ra->min_sep);
-			/*
-			 * An encounter is crossing if either:
-			 * 1) the RA sense is upward and at CPA our elev would
-			 *    have been below the intruder (+ some margin), OR
-			 * 2) the RA sense is downward and at CPA our elev
-			 *    would have been above the intruder
-			 */
-			ra->crossing |= ((ri->sense == RA_SENSE_UPWARD &&
-			    cpa->pos_b.z - cpa->pos_a.z > EQ_ALT_THRESH) ||
-			    (ri->sense == RA_SENSE_DOWNWARD &&
-			    cpa->pos_a.z - cpa->pos_b.z > EQ_ALT_THRESH));
+		/* above FL480 we want to inhibit climb RAs. */
+		if (my_acf->cur_pos.elev > INHIBIT_CLB_RA &&
+		    (msg == RA_MSG_CLB || msg == RA_MSG_CLB_CROSS ||
+		    msg == RA_MSG_CLB_MORE || msg == RA_MSG_CLB_NOW)) {
+			dbg_log(ra, 4, "CULLRI(norm) CLB(FL480/NOW) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
 		}
-		ASSERT(isfinite(ra->min_sep));
-		ra->alim_achieved = (ra->min_sep >= sl->alim_RA);
+		/* inhibit INCREASE DESCENT RAs below 1550ft AGL. */
+		if (my_acf->agl < INHIBIT_INC_DES_AGL &&
+		    msg == RA_MSG_DES_MORE) {
+			dbg_log(ra, 4, "CULLRI(norm) INCDES(1550/NOW) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/* inhibit all DESCEND RAs below 1100ft AGL. */
+		if (my_acf->agl < INHIBIT_DES_AGL &&
+		    (msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS ||
+		    msg == RA_MSG_DES_MORE || msg == RA_MSG_DES_NOW)) {
+			dbg_log(ra, 4, "CULLRI(norm) DES(1100) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
 		/*
-		 * min_sep is computed with a maneuver in mind. We want to
-		 * nullify that and provide some buffer so that another RA
-		 * won't be triggered. So we use the TA zthr instead of RA.
+		 * This is a predictive version of the conditions above, but
+		 * using AGL at the first CPA, rather than AGL NOW.
 		 */
-		ra->zthr_achieved = (ra->min_sep >= sl->zthr_TA);
+		if ((msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS) &&
+		    agl_at_cpa < INHIBIT_DES_AGL) {
+			dbg_log(ra, 4, "CULLRI(norm) DES(1100/PRED) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		if (msg == RA_MSG_DES_MORE &&
+		    agl_at_cpa < INHIBIT_INC_DES_AGL) {
+			dbg_log(ra, 4, "CULLRI(norm) DESMORE(1550/PRED) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/*
+		 * Pick an RA that makes sense from a sequencing POV. We
+		 * want to prevent a CLB MORE RA from reducing to a
+		 * regular CLB or CROSS CLB RA. In those cases, we want
+		 * to either LEVEL OFF or perform a sense reversal.
+		 */
+		if (prev_msg == RA_MSG_CLB_MORE && (msg == RA_MSG_CLB ||
+		    msg == RA_MSG_CLB_CROSS)) {
+			dbg_log(ra, 4, "CULLRI(norm) CLBMORE->CLB "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/* Same as above, but for DES_MORE */
+		if (prev_msg == RA_MSG_DES_MORE && (msg == RA_MSG_DES ||
+		    msg == RA_MSG_DES_CROSS)) {
+			dbg_log(ra, 4, "CULLRI(norm) DESMORE->DES "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		if ((msg == RA_MSG_CLB_MORE || msg == RA_MSG_DES_MORE) &&
+		    prev_sense != ri->sense) {
+			dbg_log(ra, 4, "CULLRI(norm) sense check -> *MORE "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/*
+		 * Avoid issuing a LEVEL OFF RA in response to a preventive
+		 * RA (MONITOR VS). LEVEL OFF is only allowed in response to
+		 * a corrective RA.
+		 */
+		if (msg == RA_MSG_LEVEL_OFF &&
+		    prev_type == RA_TYPE_PREVENTIVE) {
+			dbg_log(ra, 4, "CULLRI(norm) PREV -> LEVEL OFF "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/*
+		 * LEVEL OFF RAs must check that there's no RA CPA in their
+		 * black band, to avoid causing a LEVEL OFF into an intruder.
+		 */
+		if (ri->chk_black && !check_black_band(ri, my_acf, cpas)) {
+			dbg_log(ra, 4, "CULLRI(norm) LEVEL_OFF(BB) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+
+		ra = ra_construct(my_acf, ri, cpas, sl, delay_t, accel,
+		    reversal);
 		if (ra->crossing)
 			penalty += CROSSING_RA_PENALTY;
 		if (ra->reversal)
@@ -1424,128 +1628,153 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 			ra->vs_corr_reqd = roundmul(ri->vs.out.max -
 			    my_acf->vvel, ALT_ROUND_MUL);
 		}
-		msg = ra->info->msg;
-		/*
-		 * RA filtering conditions.
-		 */
-		/* 1: Above FL480 we want to inhibit climb RAs. */
+
+		/* Honor the RI's crossing restriction. */
+		if ((ri->cross == RA_CROSS_REQ && !ra->crossing) ||
+		    (ri->cross == RA_CROSS_REJ && ra->crossing)) {
+			dbg_log(ra, 4, "CULLRA(norm) cross restr "
+			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
+			free(ra);
+			continue;
+		}
+		/* Don't accept a preventive RA which doesn't give ALIM. */
+		if (prev_only && !ra->alim_achieved) {
+			dbg_log(ra, 4, "CULLRA(norm) PREV(w/o alim) "
+			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
+			free(ra);
+			continue;
+		}
+		dbg_log(ra, 4, "ADD(norm) " PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
+		avl_add(prio, ra);
+	}
+}
+
+static void
+CAS_logic_slow(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
+    avl_tree_t *cpas, const SL_t *sl, avl_tree_t *prio)
+{
+	bool_t initial = (prev_ra == NULL);
+	double delay_t = (initial ? INITIAL_RA_DELAY : SUBSEQ_RA_DELAY);
+	double accel = (initial ? INITIAL_RA_D_VVEL : SUBSEQ_RA_D_VVEL);
+
+	avl_create(prio, ra_compar_slow, sizeof (tcas_RA_t),
+	    offsetof(tcas_RA_t, node));
+
+	for (int i = 0; i < NUM_RA_INFOS; i++) {
+		const tcas_RA_info_t *ri = &RA_info[i];
+		tcas_msg_t prev_msg = (prev_ra != NULL ?
+		    prev_ra->info->msg : -1u);
+		tcas_RA_sense_t prev_sense = (prev_ra != NULL ?
+		    prev_ra->info->sense : RA_SENSE_LEVEL_OFF);
+		bool_t reversal = (prev_sense != RA_SENSE_LEVEL_OFF &&
+		    ri->sense != RA_SENSE_LEVEL_OFF && prev_sense != ri->sense);
+		tcas_msg_t msg = ri->msg;
+		tcas_RA_t *ra;
+
+		ASSERT3U(ri->msg, >=, 0);
+		ASSERT3U(ri->msg, <, RA_NUM_MSGS);
+
+		/* ri must allow initial/subseq ann as necessary */
+		if ((initial && !ri->initial) || (!initial && !ri->subseq)) {
+			dbg_log(ra, 4, "CULLRI(slow) init/subseq "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/* ri must satisfy input VS condition */
+		if (my_acf->vvel < ri->vs.in.min ||
+		    my_acf->vvel > ri->vs.in.max) {
+			dbg_log(ra, 4, "CULLRI(norm) in.vs " PRINTF_RI_FMT,
+			    PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/* if performing a sense reversal, ri must allow it */
+		if (reversal && (int)ri->rev_msg == -1) {
+			dbg_log(ra, 4, "CULLRI(slow) REV "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/* Above FL480 we want to inhibit climb RAs. */
 		if (my_acf->cur_pos.elev > INHIBIT_CLB_RA &&
 		    (msg == RA_MSG_CLB || msg == RA_MSG_CLB_CROSS ||
 		    msg == RA_MSG_CLB_MORE || msg == RA_MSG_CLB_NOW)) {
-			dbg_log(ra, 4, "CULLRA CLB(FL480/NOW) " PRINTF_RA_FMT,
-			    PRINTF_RA_ARGS(ra));
-			free(ra);
+			dbg_log(ra, 4, "CULLRI(slow) CLB(FL480/NOW) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}
-		/* 2: Inhibit INCREASE DESCENT RAs below 1550ft AGL. */
+		/* Inhibit INCREASE DESCENT RAs below 1550ft AGL. */
 		if(my_acf->agl < INHIBIT_INC_DES_AGL &&
 		    msg == RA_MSG_DES_MORE) {
-			dbg_log(ra, 4, "CULLRA INCDES(1550/NOW) "
-			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-			free(ra);
+			dbg_log(ra, 4, "CULLRI(slow) INCDES(1550/NOW) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}
-		/* 3: Inhibit all DESCEND RAs below 1100ft AGL. */
+		/* Inhibit all DESCEND RAs below 1100ft AGL. */
 		if (my_acf->agl < INHIBIT_DES_AGL &&
 		    (msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS ||
 		    msg == RA_MSG_DES_MORE || msg == RA_MSG_DES_NOW)) {
-			dbg_log(ra, 4, "CULLRA DES(1100) " PRINTF_RA_FMT,
-			    PRINTF_RA_ARGS(ra));
-			free(ra);
+			dbg_log(ra, 4, "CULLRI(slow) DES(1100) "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}
 		/*
-		 * This is a predictive version of #2 & #3, but using AGL
-		 * at the first CPA, rather than AGL NOW.
-		 */
-		if ((msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS) &&
-		    agl_at_cpa < INHIBIT_DES_AGL) {
-			dbg_log(ra, 4, "CULLRA DES(1100/PRED) " PRINTF_RA_FMT,
-			    PRINTF_RA_ARGS(ra));
-			free(ra);
-			continue;
-		}
-		if (msg == RA_MSG_DES_MORE &&
-		    agl_at_cpa < INHIBIT_INC_DES_AGL) {
-			dbg_log(ra, 4, "CULLRA DESMORE(1550/PRED) "
-			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-			free(ra);
-			continue;
-		}
-		/*
-		 * 4: Pick an RA that makes sense from a sequencing POV. We
-		 *    want to prevent a CLB MORE RA from reducing to a
-		 *    regular CLB or CROSS CLB RA. In those cases, we want
-		 *    to either LEVEL OFF or perform a sense reversal.
+		 * Pick an RA that makes sense from a sequencing POV. We
+		 * want to prevent a CLB MORE RA from reducing to a
+		 * regular CLB or CROSS CLB RA. In those cases, we want
+		 *  to either LEVEL OFF or perform a sense reversal.
 		 */
 		if (prev_msg == RA_MSG_CLB_MORE && (msg == RA_MSG_CLB ||
 		    msg == RA_MSG_CLB_CROSS)) {
-			dbg_log(ra, 4, "CULLRA CLBMORE->CLB " PRINTF_RA_FMT,
-			    PRINTF_RA_ARGS(ra));
-			free(ra);
+			dbg_log(ra, 4, "CULLRI(slow) CLBMORE->CLB "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}
-		/* Same as #4, but for DES_MORE */
-		if (prev_msg == RA_MSG_DES_MORE && (msg == RA_MSG_DES ||
-		    msg == RA_MSG_DES_CROSS)) {
-			dbg_log(ra, 4, "CULLRA DESMORE->DES " PRINTF_RA_FMT,
-			    PRINTF_RA_ARGS(ra));
-			free(ra);
+		/* Inhibit PREVENTIVE or LEVEL OFF RAs for slow encounters */
+		if (ri->type == RA_TYPE_PREVENTIVE ||
+		    ri->sense == RA_SENSE_LEVEL_OFF) {
+			dbg_log(ra, 4, "CULLRI(slow) BADRA "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}
-		/*
-		 * 5: Don't say CLIMB MORE/DES MORE if previously we weren't
-		 *    climbing/descending. We can only enter those RAs from
-		 *    their respective CLB/DES RAs.
-		 */
-		if ((msg == RA_MSG_CLB_MORE || msg == RA_MSG_DES_MORE) &&
-		    prev_sense != ra->info->sense) {
-			dbg_log(ra, 4, "CULLRA sense check -> *MORE "
-			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-			free(ra);
-			continue;
+
+		ra = ra_construct(my_acf, ri, cpas, sl, delay_t, accel,
+		    reversal);
+		if (my_acf->vvel < ri->vs.out.min) {
+			ra->vs_corr_reqd = roundmul(ri->vs.out.min -
+			    my_acf->vvel, ALT_ROUND_MUL);
+		} else if (my_acf->vvel > ri->vs.out.max) {
+			ra->vs_corr_reqd = roundmul(ri->vs.out.max -
+			    my_acf->vvel, ALT_ROUND_MUL);
 		}
-		/* 6: Honor the RI's crossing restriction. */
-		if ((ri->cross == RA_CROSS_REQ && !ra->crossing) ||
-		    (ri->cross == RA_CROSS_REJ && ra->crossing)) {
-			dbg_log(ra, 4, "CULLRA cross restr "
-			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-			free(ra);
-			continue;
-		}
-		/*
-		 * 7: Avoid issuing a LEVEL OFF RA in response to a
-		 *    preventive RA (MONITOR VS). LEVEL OFF is only
-		 *    allowed in response to a corrective RA.
-		 */
-		if (ri->msg == RA_MSG_LEVEL_OFF &&
-		    prev_type == RA_TYPE_PREVENTIVE) {
-			dbg_log(ra, 4, "CULLRA PREV -> LEVEL OFF "
-			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-			free(ra);
-			continue;
-		}
-		/* 8: Don't accept a preventive RA which doesn't give ALIM. */
-		if (prev_only && !ra->alim_achieved) {
-			dbg_log(ra, 4, "CULLRA PREV(w/o alim) "
-			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-			free(ra);
-			continue;
-		}
-		/*
-		 * 9: LEVEL OFF RAs must check that there's no RA CPA in their
-		 *    black band, to avoid causing a LEVEL OFF into an intruder.
-		 */
-		if (ri->chk_black && !check_black_band(ri, my_acf, cpas)) {
-			dbg_log(ra, 4, "CULLRA LEVEL_OFF(BB) "
-			    PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-			free(ra);
-			continue;
-		}
-		dbg_log(ra, 4, "ADD " PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
-		avl_add(&prio, ra);
+
+		dbg_log(ra, 4, "ADD(slow) " PRINTF_RA_FMT, PRINTF_RA_ARGS(ra));
+		avl_add(prio, ra);
 	}
-	ASSERT(avl_numnodes(&prio) != 0);
+}
+
+static tcas_RA_t *
+CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
+    const SL_t *sl, bool_t prev_only, bool_t slow_closure)
+{
+	bool_t initial = (prev_ra == NULL);
+	const cpa_t *last_cpa = avl_last(cpas);
+	avl_tree_t prio;
+	tcas_RA_t *ra, *xra;
+	void *cookie;
+
+	ASSERT(last_cpa != NULL);
+
+	/*
+	 * Don't try subsequent RAs if we're too close to the last CPA anyway.
+	 */
+	if (!initial && last_cpa->d_t < SUBSEQ_RA_DELAY)
+		return (NULL);
+
+	if (!slow_closure)
+		CAS_logic_normal(my_acf, prev_ra, cpas, sl, prev_only, &prio);
+	else
+		CAS_logic_slow(my_acf, prev_ra, cpas, sl, &prio);
+
+	ASSERT(avl_numnodes(&prio) != 0 || !initial);
 
 	if (xtcas_dbg.ra >= 2) {
 		for (tcas_RA_t *ra = avl_first(&prio); ra != NULL;
@@ -1559,8 +1788,8 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 	if (ra != NULL)
 		avl_remove(&prio, ra);
 	cookie = NULL;
-	while ((rra = avl_destroy_nodes(&prio, &cookie)) != NULL)
-		free(rra);
+	while ((xra = avl_destroy_nodes(&prio, &cookie)) != NULL)
+		free(xra);
 	avl_destroy(&prio);
 
 	/*
@@ -1597,6 +1826,7 @@ construct_RA_hints(avl_tree_t *RA_hints, avl_tree_t *RA_cpas)
 		tcas_RA_hint_t *hint = calloc(1, sizeof (*hint));
 		hint->acf_id = cpa->acf_b->acf_id;
 		hint->level = cpa->acf_b->threat;
+		hint->slow_closure = cpa->acf_b->slow_closure;
 		avl_add(RA_hints, hint);
 	}
 }
@@ -1608,17 +1838,21 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 	bool_t TA_found = B_FALSE;
 	bool_t RA_prev_found = B_FALSE;
 	bool_t RA_corr_found = B_FALSE;
+	bool_t slow_closure_only = B_TRUE;
 	avl_tree_t RA_cpas;
 	void *cookie;
 
 	/* Re-assign threat level as necessary. */
 	for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 	    acf = AVL_NEXT(other_acf, acf)) {
-		assign_threat_level(my_acf->cur_pos_3d, acf, sl, RA_hints,
+		assign_threat_level(my_acf, acf, sl, RA_hints,
 		    tcas_state.filter);
 		TA_found |= (acf->threat == TA_THREAT);
 		RA_prev_found |= (acf->threat == RA_THREAT_PREV);
 		RA_corr_found |= (acf->threat == RA_THREAT_CORR);
+		if (acf->threat == RA_THREAT_PREV ||
+		    acf->threat == RA_THREAT_CORR)
+			slow_closure_only &= acf->slow_closure;
 	}
 
 	avl_create(&RA_cpas, cpa_compar, sizeof (cpa_t),
@@ -1658,9 +1892,14 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		     * vertical rate value.
 		     */
 		    RA_prev_found && !RA_corr_found &&
-		    ABS(my_acf->vvel) < FPM2MPS(2000));
+		    ABS(my_acf->vvel) < FPM2MPS(2000), slow_closure_only);
 		/* On initial annunciation, we must ALWAYS issue an RA */
 		ASSERT(ra != NULL || tcas_state.ra != NULL);
+
+		if (tcas_state.adv_state != ADV_STATE_RA) {
+			/* memorize what VS we started at */
+			tcas_state.initial_ra_vs = my_acf->vvel;
+		}
 
 		if (ra != NULL) {
 			dbg_log(ra, 1, "SELECTED RA: " PRINTF_RA_FMT,
@@ -1683,10 +1922,6 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 					prev_msg = tcas_state.ra->info->msg;
 					free(tcas_state.ra);
 				} else {
-					ASSERT(isnan(tcas_state.initial_ra_vs));
-					/* memorize what VS we started at */
-					tcas_state.initial_ra_vs =
-					    my_acf->vvel;
 				}
 				tcas_state.ra = ra;
 				tcas_state.change_t = now;
@@ -1725,8 +1960,8 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		 * annunciating TRAFFIC after an RA has been resolved, but
 		 * while the traffic still falls into the TA range.
 		 */
-		dbg_log(tcas, 1, "resolve_CPAs: TA  adv_state:%d  elapsed:%.0f",
-		    tcas_state.adv_state,
+		dbg_log(tcas, 1, "resolve_CPAs: TA  adv_state:%d  "
+		    "elapsed:%.0f", tcas_state.adv_state,
 		    (now - tcas_state.change_t) / 1000000.0);
 		if (tcas_state.adv_state < ADV_STATE_TA &&
 		    now - tcas_state.change_t >= STATE_CHG_DELAY) {
@@ -1844,7 +2079,7 @@ main_loop(void *ignored)
 			sl = xtcas_SL_select(sl != NULL ? sl->SL_id : 1,
 			    my_acf.cur_pos.elev, my_acf.agl,
 			    tcas_state.mode == TCAS_MODE_TAONLY ? 2 : 0);
-			dbg_log(tcas, 1, "SL: %d", sl->SL_id);
+			dbg_log(sl, 1, "SL: %d", sl->SL_id);
 		}
 
 		/*
