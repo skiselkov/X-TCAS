@@ -16,8 +16,9 @@
  * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
-#include "assert.h"
-#include "helpers.h"
+#include <acfutils/assert.h>
+#include <acfutils/helpers.h>
+
 #include "pos.h"
 
 #define	STEP_BACK(step)	((step) == 0 ? (NUM_POS_STEPS - 1) : (step) - 1)

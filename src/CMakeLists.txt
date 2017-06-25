@@ -16,11 +16,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
-SET(SRC SL.c avl.c geom.c helpers.c list.c log.c math.c pos.c
-    xtcas.c thread.c time.c wav.c snd_sys.c riff.c)
-SET(HDR SL.h avl.h avl_impl.h geom.h helpers.h log.h list.h list_impl.h
-    math.h pos.h types.h xtcas.h time.h thread.h wav.h snd_sys.h
-    riff.h)
+SET(SRC SL.c dbg_log.c pos.c snd_sys.c xtcas.c)
+SET(HDR SL.h dbg_log.h pos.h snd_sys.h xtcas.h)
 
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} -DDEBUG")
 SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG -O0")
@@ -55,6 +52,8 @@ elseif(WIN32)
 	SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} /MD")
 	SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MDd")
 endif()
+
+include_directories(xtcas PUBLIC "${LIBACFUTILS}/src")
 
 #compiler flags
 if(WIN32)
@@ -133,6 +132,11 @@ elseif(WIN32)
 		    ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY})
 	endif()
 endif()
+
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} \
+    -L${LIBACFUTILS}/qmake/mac64 -lacfutils")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} \
+    -L${LIBACFUTILS}/qmake/mac64 -lacfutils")
 
 SET_TARGET_PROPERTIES(xtcas PROPERTIES PREFIX "")
 SET_TARGET_PROPERTIES(xtcas PROPERTIES SUFFIX "")

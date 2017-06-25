@@ -18,10 +18,6 @@
 #ifndef	_SND_SYS_H_
 #define	_SND_SYS_H_
 
-#include <stdlib.h>
-
-#include "avl.h"
-#include "types.h"
 #include "xtcas.h"
 
 #ifdef	__cplusplus

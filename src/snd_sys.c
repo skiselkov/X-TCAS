@@ -21,14 +21,15 @@
 #ifndef	TEST_STANDALONE_BUILD
 #include <XPLMProcessing.h>
 #else	/* TEST_STANDALONE_BUILD */
-#include "thread.h"
-#include "time.h"
+#include <acfutils/thread.h>
+#include <acfutils/time.h>
 #endif	/* TEST_STANDALONE_BUILD */
 
-#include "assert.h"
-#include "list.h"
-#include "wav.h"
+#include <acfutils/assert.h>
+#include <acfutils/list.h>
+#include <acfutils/wav.h>
 
+#include "dbg_log.h"
 #include "snd_sys.h"
 
 typedef struct msg {
@@ -65,7 +66,7 @@ xtcas_snd_sys_init(const char *snd_dir)
 	ASSERT(!inited);
 
 	/* no WAV/OpenAL calls before this */
-	if (!xtcas_openal_init())
+	if (!openal_init())
 		return (B_FALSE);
 
 	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
@@ -73,13 +74,12 @@ xtcas_snd_sys_init(const char *snd_dir)
 
 		ASSERT3P(voice_msgs[msg].wav, ==, NULL);
 		pathname = mkpathname(snd_dir, voice_msgs[msg].file, NULL);
-		voice_msgs[msg].wav = xtcas_wav_load(pathname,
-		    voice_msgs[msg].file);
+		voice_msgs[msg].wav = wav_load(pathname, voice_msgs[msg].file);
 		if (voice_msgs[msg].wav == NULL) {
 			free(pathname);
 			goto errout;
 		}
-		xtcas_wav_set_gain(voice_msgs[msg].wav, 1.0);
+		wav_set_gain(voice_msgs[msg].wav, 1.0);
 		free(pathname);
 	}
 
@@ -90,11 +90,11 @@ xtcas_snd_sys_init(const char *snd_dir)
 errout:
 	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
-			xtcas_wav_free(voice_msgs[msg].wav);
+			wav_free(voice_msgs[msg].wav);
 			voice_msgs[msg].wav = NULL;
 		}
 	}
-	xtcas_openal_fini();
+	openal_fini();
 
 	return (B_FALSE);
 }
@@ -109,13 +109,13 @@ xtcas_snd_sys_fini(void)
 
 	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
 		if (voice_msgs[msg].wav != NULL) {
-			xtcas_wav_free(voice_msgs[msg].wav);
+			wav_free(voice_msgs[msg].wav);
 			voice_msgs[msg].wav = NULL;
 		}
 	}
 
 	/* no more OpenAL/WAV calls after this */
-	xtcas_openal_fini();
+	openal_fini();
 
 	inited = B_FALSE;
 }
@@ -138,13 +138,13 @@ xtcas_snd_sys_run(double volume)
 	if (cur_volume != volume) {
 		cur_volume = volume;
 		for (int i = 0; i < RA_NUM_MSGS; i++)
-			xtcas_wav_set_gain(voice_msgs[i].wav, volume);
+			wav_set_gain(voice_msgs[i].wav, volume);
 	}
 
 	msg = cur_msg;
 	if ((int)msg != -1) {
 		cur_msg = -1u;
 		ASSERT3U(msg, <, RA_NUM_MSGS);
-		(void) xtcas_wav_play(voice_msgs[msg].wav);
+		(void) wav_play(voice_msgs[msg].wav);
 	}
 }

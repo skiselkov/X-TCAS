@@ -22,19 +22,19 @@
 #include <stddef.h>
 #include <fcntl.h>
 #include <unistd.h>
-
-
 #include <ncurses.h>
 
-#include "assert.h"
-#include "geom.h"
-#include "list.h"
-#include "log.h"
-#include "snd_sys.h"
-#include "time.h"
-#include "thread.h"
-#include "xtcas.h"
+#include <acfutils/assert.h>
+#include <acfutils/geom.h>
+#include <acfutils/list.h>
+#include <acfutils/log.h>
+#include <acfutils/perf.h>
+#include <acfutils/time.h>
+#include <acfutils/thread.h>
 
+#include "dbg_log.h"
+#include "snd_sys.h"
+#include "xtcas.h"
 #include "test.h"
 
 #define	SIMSTEP		100000	/* microseconds */

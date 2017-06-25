@@ -19,8 +19,10 @@
 #include <stdlib.h>
 #include <math.h>
 
-#include "assert.h"
-#include "helpers.h"
+#include <acfutils/assert.h>
+#include <acfutils/helpers.h>
+#include <acfutils/perf.h>
+
 #include "SL.h"
 
 /*

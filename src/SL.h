@@ -19,7 +19,7 @@
 #ifndef _XTCAS_SL_H_
 #define _XTCAS_SL_H_
 
-#include "types.h"
+#include <acfutils/types.h>
 
 #ifdef __cplusplus
 extern "C" {

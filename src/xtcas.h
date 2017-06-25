@@ -19,7 +19,8 @@
 #ifndef	_XTCAS_H_
 #define	_XTCAS_H_
 
-#include "geom.h"
+#include <acfutils/avl.h>
+#include <acfutils/geom.h>
 
 #ifdef __cplusplus
 extern "C" {

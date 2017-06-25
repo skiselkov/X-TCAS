@@ -20,18 +20,20 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "assert.h"
-#include "avl.h"
-#include "helpers.h"
-#include "geom.h"
-#include "log.h"
-#include "math.h"
+#include <acfutils/assert.h>
+#include <acfutils/avl.h>
+#include <acfutils/helpers.h>
+#include <acfutils/geom.h>
+#include <acfutils/log.h>
+#include <acfutils/math.h>
+#include <acfutils/perf.h>
+#include <acfutils/thread.h>
+#include <acfutils/time.h>
+
+#include "dbg_log.h"
 #include "pos.h"
 #include "snd_sys.h"
 #include "SL.h"
-#include "thread.h"
-#include "time.h"
-
 #include "xtcas.h"
 
 #define	ALT_ROUND_MUL		FPM2MPS(100)	/* altitude rouding multiple */
@@ -1531,8 +1533,7 @@ CAS_logic_normal(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
 		}
 		/* above FL480 we want to inhibit climb RAs. */
 		if (my_acf->cur_pos.elev > INHIBIT_CLB_RA &&
-		    (msg == RA_MSG_CLB || msg == RA_MSG_CLB_CROSS ||
-		    msg == RA_MSG_CLB_MORE || msg == RA_MSG_CLB_NOW)) {
+		    ri->sense == RA_SENSE_UPWARD) {
 			dbg_log(ra, 4, "CULLRI(norm) CLB(FL480/NOW) "
 			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
@@ -1546,8 +1547,7 @@ CAS_logic_normal(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
 		}
 		/* inhibit all DESCEND RAs below 1100ft AGL. */
 		if (my_acf->agl < INHIBIT_DES_AGL &&
-		    (msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS ||
-		    msg == RA_MSG_DES_MORE || msg == RA_MSG_DES_NOW)) {
+		    ri->sense == RA_SENSE_DOWNWARD) {
 			dbg_log(ra, 4, "CULLRI(norm) DES(1100) "
 			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
@@ -1696,8 +1696,7 @@ CAS_logic_slow(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
 		}
 		/* Above FL480 we want to inhibit climb RAs. */
 		if (my_acf->cur_pos.elev > INHIBIT_CLB_RA &&
-		    (msg == RA_MSG_CLB || msg == RA_MSG_CLB_CROSS ||
-		    msg == RA_MSG_CLB_MORE || msg == RA_MSG_CLB_NOW)) {
+		    ri->sense == RA_SENSE_UPWARD) {
 			dbg_log(ra, 4, "CULLRI(slow) CLB(FL480/NOW) "
 			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
@@ -1711,8 +1710,7 @@ CAS_logic_slow(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
 		}
 		/* Inhibit all DESCEND RAs below 1100ft AGL. */
 		if (my_acf->agl < INHIBIT_DES_AGL &&
-		    (msg == RA_MSG_DES || msg == RA_MSG_DES_CROSS ||
-		    msg == RA_MSG_DES_MORE || msg == RA_MSG_DES_NOW)) {
+		    ri->sense == RA_SENSE_DOWNWARD) {
 			dbg_log(ra, 4, "CULLRI(slow) DES(1100) "
 			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
@@ -1726,6 +1724,13 @@ CAS_logic_slow(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra,
 		if (prev_msg == RA_MSG_CLB_MORE && (msg == RA_MSG_CLB ||
 		    msg == RA_MSG_CLB_CROSS)) {
 			dbg_log(ra, 4, "CULLRI(slow) CLBMORE->CLB "
+			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
+			continue;
+		}
+		/* Same as above, but for DES_MORE */
+		if (prev_msg == RA_MSG_DES_MORE && (msg == RA_MSG_DES ||
+		    msg == RA_MSG_DES_CROSS)) {
+			dbg_log(ra, 4, "CULLRI(norm) DESMORE->DES "
 			    PRINTF_RI_FMT, PRINTF_RI_ARGS(ri));
 			continue;
 		}

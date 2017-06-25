@@ -19,7 +19,7 @@
 #ifndef	_XTCAS_POS_H_
 #define	_XTCAS_POS_H_
 
-#include "geom.h"
+#include <acfutils/geom.h>
 
 #ifdef __cplusplus
 extern "C" {

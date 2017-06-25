@@ -20,23 +20,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "XPLMDataAccess.h"
-#include "XPLMDisplay.h"
-#include "XPLMGraphics.h"
-#include "XPLMPlanes.h"
-#include "XPLMPlugin.h"
-#include "XPLMProcessing.h"
+#include <XPLMDataAccess.h>
+#include <XPLMDisplay.h>
+#include <XPLMGraphics.h>
+#include <XPLMPlanes.h>
+#include <XPLMPlugin.h>
+#include <XPLMProcessing.h>
 
-#include "assert.h"
-#include "avl.h"
-#include "geom.h"
-#include "log.h"
-#include "helpers.h"
+#include <acfutils/assert.h>
+#include <acfutils/avl.h>
+#include <acfutils/geom.h>
+#include <acfutils/log.h>
+#include <acfutils/helpers.h>
+#include <acfutils/types.h>
+#include <acfutils/thread.h>
+
 #include "snd_sys.h"
-#include "types.h"
 #include "xtcas.h"
-#include "thread.h"
-
 #include "xplane.h"
 
 #define	FLOOP_INTVAL			0.1
