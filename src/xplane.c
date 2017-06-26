@@ -27,6 +27,7 @@
 #include <XPLMPlugin.h>
 #include <XPLMProcessing.h>
 
+#include <acfutils/acfutils.h>
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
 #include <acfutils/geom.h>
@@ -322,6 +323,8 @@ PLUGIN_API int
 XPluginStart(char *name, char *sig, char *desc)
 {
 	char *snd_dir;
+
+	acfutils_logfunc = XPLMDebugString;
 
 	XPLMGetPluginInfo(XPLMGetMyID(), NULL, plugindir, NULL, NULL);
 
