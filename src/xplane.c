@@ -26,10 +26,12 @@
 #include <XPLMPlanes.h>
 #include <XPLMPlugin.h>
 #include <XPLMProcessing.h>
+#include <XPLMUtilities.h>
 
 #include <acfutils/acfutils.h>
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
+#include <acfutils/dr.h>
 #include <acfutils/geom.h>
 #include <acfutils/log.h>
 #include <acfutils/helpers.h>
@@ -51,20 +53,24 @@
 #define	MAX_DR_NAME_LEN	256
 
 static bool_t intf_inited = B_FALSE;
-static XPLMDataRef time_dr = NULL,
-    baro_alt_dr = NULL,
-    rad_alt_dr = NULL,
-    lat_dr = NULL,
-    lon_dr = NULL,
-    plane_x_dr = NULL,
-    plane_y_dr = NULL,
-    plane_z_dr = NULL,
-    view_is_ext_dr = NULL,
-    warn_volume_dr = NULL;
+static struct {
+	dr_t	time;
+	dr_t	baro_alt;
+	dr_t	rad_alt;
+	dr_t	lat;
+	dr_t	lon;
+	dr_t	plane_x;
+	dr_t	plane_y;
+	dr_t	plane_z;
+	dr_t	view_is_ext;
+	dr_t	warn_volume;
+} drs;
 
-static XPLMDataRef mp_plane_x_dr[MAX_MP_PLANES],
-    mp_plane_y_dr[MAX_MP_PLANES],
-    mp_plane_z_dr[MAX_MP_PLANES];
+static struct {
+	dr_t	x;
+	dr_t	y;
+	dr_t	z;
+} mp_planes[MAX_MP_PLANES];
 
 static mutex_t acf_pos_lock;
 static avl_tree_t acf_pos_tree;
@@ -102,57 +108,31 @@ acf_pos_compar(const void *a, const void *b)
 		return (1);
 }
 
-static XPLMDataRef
-find_dr_chk(XPLMDataTypeID type, const char *fmt, ...)
-{
-	char name[MAX_DR_NAME_LEN];
-	va_list ap;
-
-	va_start(ap, fmt);
-	vsnprintf(name, sizeof (name), fmt, ap);
-	va_end(ap);
-
-	XPLMDataRef dr = XPLMFindDataRef(name);
-	ASSERT(dr != NULL);
-	ASSERT3U((XPLMGetDataRefTypes(dr) & type), ==, type);
-
-	return (dr);
-}
-
 static void
 sim_intf_init(void)
 {
-	time_dr = find_dr_chk(xplmType_Float,
-	    "sim/time/total_running_time_sec");
-	baro_alt_dr = find_dr_chk(xplmType_Float,
-	    "sim/flightmodel/misc/h_ind");
-	rad_alt_dr = find_dr_chk(xplmType_Float,
+	fdr_find(&drs.time, "sim/time/total_running_time_sec");
+	fdr_find(&drs.baro_alt, "sim/flightmodel/misc/h_ind");
+	fdr_find(&drs.rad_alt,
 	    "sim/cockpit2/gauges/indicators/radio_altimeter_height_ft_pilot");
-	lat_dr = find_dr_chk(xplmType_Double,
-	    "sim/flightmodel/position/latitude");
-	lon_dr = find_dr_chk(xplmType_Double,
-	    "sim/flightmodel/position/longitude");
+	fdr_find(&drs.lat, "sim/flightmodel/position/latitude");
+	fdr_find(&drs.lon, "sim/flightmodel/position/longitude");
 
-	plane_x_dr = find_dr_chk(xplmType_Double,
-	    "sim/flightmodel/position/local_x");
-	plane_y_dr = find_dr_chk(xplmType_Double,
-	    "sim/flightmodel/position/local_y");
-	plane_z_dr = find_dr_chk(xplmType_Double,
-	    "sim/flightmodel/position/local_z");
+	fdr_find(&drs.plane_x, "sim/flightmodel/position/local_x");
+	fdr_find(&drs.plane_y, "sim/flightmodel/position/local_y");
+	fdr_find(&drs.plane_z, "sim/flightmodel/position/local_z");
+
+	fdr_find(&drs.view_is_ext, "sim/graphics/view/view_is_external");
+	fdr_find(&drs.warn_volume, "sim/operation/sound/warning_volume_ratio");
 
 	for (int i = 0; i < MAX_MP_PLANES; i++) {
-		mp_plane_x_dr[i] = find_dr_chk(xplmType_Double,
+		fdr_find(&mp_planes[i].x,
 		    "sim/multiplayer/position/plane%d_x", i + 1);
-		mp_plane_y_dr[i] = find_dr_chk(xplmType_Double,
+		fdr_find(&mp_planes[i].y,
 		    "sim/multiplayer/position/plane%d_y", i + 1);
-		mp_plane_z_dr[i] = find_dr_chk(xplmType_Double,
+		fdr_find(&mp_planes[i].z,
 		    "sim/multiplayer/position/plane%d_z", i + 1);
 	}
-
-	view_is_ext_dr = find_dr_chk(xplmType_Int,
-	    "sim/graphics/view/view_is_external");
-	warn_volume_dr = find_dr_chk(xplmType_Float,
-	    "sim/operation/sound/warning_volume_ratio");
 
 	avl_create(&acf_pos_tree, acf_pos_compar, sizeof (acf_pos_t),
 	    offsetof(acf_pos_t, tree_node));
@@ -167,19 +147,8 @@ sim_intf_fini(void)
 	void *cookie = NULL;
 	acf_pos_t *p;
 
-	time_dr = NULL;
-	baro_alt_dr = NULL;
-	rad_alt_dr = NULL;
-	lat_dr = NULL;
-	lon_dr = NULL;
-
-	plane_x_dr = NULL;
-	plane_y_dr = NULL;
-	plane_z_dr = NULL;
-
-	memset(mp_plane_x_dr, 0, sizeof (mp_plane_x_dr));
-	memset(mp_plane_y_dr, 0, sizeof (mp_plane_y_dr));
-	memset(mp_plane_z_dr, 0, sizeof (mp_plane_z_dr));
+	memset(&drs, 0, sizeof (drs));
+	memset(&mp_planes, 0, sizeof (mp_planes));
 
 	while ((p = avl_destroy_nodes(&acf_pos_tree, &cookie)) != NULL)
 		free(p);
@@ -205,10 +174,10 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	last_pos_collected = now;
 
 	/* grab our aircraft position */
-	my_acf_pos.lat = XPLMGetDatad(lat_dr);
-	my_acf_pos.lon = XPLMGetDatad(lon_dr);
-	my_acf_pos.elev = XPLMGetDataf(baro_alt_dr);
-	my_acf_agl = XPLMGetDataf(rad_alt_dr);
+	my_acf_pos.lat = dr_getf(&drs.lat);
+	my_acf_pos.lon = dr_getf(&drs.lon);
+	my_acf_pos.elev = dr_getf(&drs.baro_alt);
+	my_acf_agl = dr_getf(&drs.rad_alt);
 
 	/* grab all other aircraft positions */
 	for (int i = 0; i < MAX_MP_PLANES; i++) {
@@ -218,9 +187,9 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 		acf_pos_t srch;
 		acf_pos_t *pos;
 
-		local.x = XPLMGetDatad(mp_plane_x_dr[i]);
-		local.y = XPLMGetDatad(mp_plane_y_dr[i]);
-		local.z = XPLMGetDatad(mp_plane_z_dr[i]);
+		local.x = dr_getf(&mp_planes[i].x);
+		local.y = dr_getf(&mp_planes[i].y);
+		local.z = dr_getf(&mp_planes[i].z);
 
 		mutex_enter(&acf_pos_lock);
 
@@ -304,15 +273,15 @@ static float
 floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
     int counter, void *refcon)
 {
-	double volume = (XPLMGetDatai(view_is_ext_dr) != 1) ?
-	    XPLMGetDataf(warn_volume_dr) : 0;
+	double volume = (dr_geti(&drs.view_is_ext) != 1) ?
+	    dr_getf(&drs.warn_volume) : 0;
 
 	UNUSED(elapsed_since_last_call);
 	UNUSED(elapsed_since_last_floop);
 	UNUSED(counter);
 	UNUSED(refcon);
 
-	cur_sim_time = XPLMGetDataf(time_dr);
+	cur_sim_time = dr_getf(&drs.time);
 	xtcas_run();
 	xtcas_snd_sys_run(volume);
 
