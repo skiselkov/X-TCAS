@@ -318,12 +318,13 @@ XPluginStop(void)
 	sim_intf_fini();
 }
 
-PLUGIN_API void
+PLUGIN_API int
 XPluginEnable(void)
 {
 	xtcas_init(&xp_intf_ops);
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel, 1, NULL);
+	return (1);
 }
 
 PLUGIN_API void
