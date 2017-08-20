@@ -28,7 +28,6 @@
 #include <XPLMProcessing.h>
 #include <XPLMUtilities.h>
 
-#include <acfutils/acfutils.h>
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
 #include <acfutils/dr.h>
@@ -293,7 +292,7 @@ XPluginStart(char *name, char *sig, char *desc)
 {
 	char *snd_dir;
 
-	acfutils_logfunc = XPLMDebugString;
+	log_init(XPLMDebugString, "xtcas");
 
 	XPLMGetPluginInfo(XPLMGetMyID(), NULL, plugindir, NULL, NULL);
 

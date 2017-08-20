@@ -16,8 +16,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
-SET(SRC SL.c dbg_log.c pos.c snd_sys.c xtcas.c)
-SET(HDR SL.h dbg_log.h pos.h snd_sys.h xtcas.h)
+SET(SRC SL.c dbg_log.c pos.c xtcas.c snd_sys.c)
+SET(HDR SL.h dbg_log.h pos.h xtcas.h snd_sys.h)
 
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} -DDEBUG")
 SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG -O0")
@@ -36,32 +36,23 @@ LIST(SORT ALL_SRC)
 
 if(APPLE)
 	add_executable(xtcas ${ALL_SRC})
-elseif(UNIX)
+else()
 	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
 		add_executable(xtcas ${ALL_SRC})
 	else()
 		add_library(xtcas SHARED ${ALL_SRC})
 	endif()
-elseif(WIN32)
-	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
-		add_executable(xtcas ${ALL_SRC})
-	else()
-		add_library(xtcas MODULE ${ALL_SRC})
-	endif()
-	SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MD")
-	SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} /MD")
-	SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MDd")
 endif()
 
-include_directories(xtcas PUBLIC "${LIBACFUTILS}/src")
-
 #compiler flags
-if(WIN32)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DCHECK_RESULT_USED=_Check_return_")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -W -Wall -Wextra -Werror \
+    -fvisibility=hidden \
+    -DCHECK_RESULT_USED=\"__attribute__ ((warn_unused_result))\"")
+if(APPLE)
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
 else()
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -W -Wall -Wextra -Werror \
-	    --std=c99 \
-	    -DCHECK_RESULT_USED=\"__attribute__ ((warn_unused_result))\"")
+	# Because Linux header fixes are a pile of stinking garbage.
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
 endif()
 
 #libraries
@@ -77,66 +68,77 @@ else()
 		include_directories(xtcas PUBLIC "..\\SDK\\CHeaders\\XPLM"
 		    "..\\SDK\\CHeaders\\Widgets" "..\\SDK\\CHeaders\\Wrappers")
 	endif()
-endif(UNIX)
+endif()
+
 if(APPLE)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -Wno-deprecated")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=10.7")
-endif(APPLE)
-if(WIN32)
-	target_include_directories(xtcas PUBLIC "..\\SDK\\CHeaders\\XPLM"
-	    "..\\SDK\\CHeaders\\Widgets" "..\\SDK\\CHeaders\\Wrappers")
-endif(WIN32)
+endif()
+
+include_directories(bp PUBLIC "${LIBACFUTILS}/src")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DXPLM200=1 -DXPLM210=1")
 if(APPLE)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAPL=1 -DIBM=0 -DLIN=0")
-elseif(UNIX)
+else()
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAPL=0 -DIBM=0 -DLIN=1")
-elseif(WIN32)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAPL=0 -DIBM=1 -DLIN=0 \
-	    -D_CRT_SECURE_NO_WARNINGS /bigobj")
 endif()
 
 #linking
 link_libraries(m)
 if(APPLE)
-	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} ../SDK/Libraries/Mac/)
+	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} ../SDK/Libraries/Mac/
+	    ${LIBACFUTILS}/qmake/mac64
+	    ${LIBACFUTILS}/opus/opusfile-mac-64/lib
+	    ${LIBACFUTILS}/opus/opus-mac-64/lib
+	    ${LIBACFUTILS}/opus/libogg-mac-64/install/lib)
 	FIND_LIBRARY(XPLM_LIBRARY XPLM ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(XPWIDGETS_LIBRARY XPWidgets ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(OPENAL_LIBRARY OpenAL)
 	FIND_LIBRARY(CURSES_LIBRARY ncurses)
+	FIND_LIBRARY(LIBACFUTILS_LIBRARY acfutils)
+	FIND_LIBRARY(OPUSFILE_LIBRARY opusfile)
+	FIND_LIBRARY(OPUS_LIBRARY opus)
+	FIND_LIBRARY(OGG_LIBRARY ogg)
+	target_link_libraries(xtcas
+	    ${XPLM_LIBRARY}
+	    ${XPWIDGETS_LIBRARY}
+	    ${LIBACFUTILS_LIBRARY}
+	    ${OPUSFILE_LIBRARY}
+	    ${OPUS_LIBRARY}
+	    ${OGG_LIBRARY}
+	    ${OPENAL_LIBRARY})
 	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
-		target_link_libraries(xtcas ${OPENAL_LIBRARY}
-		    ${CURSES_LIBRARY} "pthread")
-	else()
-		target_link_libraries(xtcas ${OPENAL_LIBRARY}
-		    ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY})
+		target_link_libraries(xtcas ${CURSES_LIBRARY})
 	endif()
-elseif(UNIX)
-	INCLUDE(FindPkgConfig)
-	pkg_check_modules(UDEV REQUIRED libudev)
-	include_directories(${UDEV_INCLUDE_DIRS})
-	link_directories(${UDEV_LIBRARY_DIRS})
-	target_link_libraries(xtcas ${UDEV_LIBRARIES})
-elseif(WIN32)
+else()
 	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
-	    "..\\SDK\\Libraries\\Win\\")
-	FIND_LIBRARY(XPLM_LIBRARY XPLM_64
-	    "..\\SDK\\Libraries\\Win\\")
-	FIND_LIBRARY(XPWIDGETS_LIBRARY XPWidgets_64
-	    "..\\SDK\\Libraries\\Win\\")
+	    ${LIBACFUTILS}/qmake/lin64
+	    ${LIBACFUTILS}/opus/opusfile-linux-64/lib
+	    ${LIBACFUTILS}/opus/opus-linux-64/lib
+	    ${LIBACFUTILS}/opus/libogg-linux-64/install/lib)
+
+	INCLUDE(FindPkgConfig)
+	pkg_check_modules(OPENAL REQUIRED openal)
+	link_directories(${OPENAL_LIBRARY_DIRS})
+
+	FIND_LIBRARY(CURSES_LIBRARY ncurses)
+	FIND_LIBRARY(LIBACFUTILS_LIBRARY acfutils)
+	FIND_LIBRARY(OPUSFILE_LIBRARY opusfile)
+	FIND_LIBRARY(OPUS_LIBRARY opus)
+	FIND_LIBRARY(OGG_LIBRARY ogg)
+
+	target_link_libraries(xtcas
+	    ${LIBACFUTILS_LIBRARY}
+	    ${OPUSFILE_LIBRARY}
+	    ${OPUS_LIBRARY}
+	    ${OGG_LIBRARY}
+	    )
 	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
-		target_link_libraries(xtcas ${OPENAL_LIBRARY})
-	else()
-		target_link_libraries(xtcas ${OPENAL_LIBRARY}
-		    ${XPLM_LIBRARY} ${XPWIDGETS_LIBRARY})
+		target_link_libraries(xtcas
+		    ${CURSES_LIBRARY} ${OPENAL_LIBRARIES} "pthread" "m")
 	endif()
 endif()
-
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} \
-    -L${LIBACFUTILS}/qmake/mac64 -lacfutils")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} \
-    -L${LIBACFUTILS}/qmake/mac64 -lacfutils")
 
 SET_TARGET_PROPERTIES(xtcas PROPERTIES PREFIX "")
 SET_TARGET_PROPERTIES(xtcas PROPERTIES SUFFIX "")
@@ -149,13 +151,11 @@ else()
 		SET_TARGET_PROPERTIES(xtcas PROPERTIES LINK_FLAGS
 		    "${CMAKE_SHARED_LINKER_FLAGS} -fPIC -fvisibility=hidden \
 		    -bundle")
-	elseif(UNIX)
+	else()
 		set(OUTPUT_FILENAME "lin.xpl")
 		SET_TARGET_PROPERTIES(xtcas PROPERTIES LINK_FLAGS
 		    "${CMAKE_SHARED_LINKER_FLAGS} -rdynamic -nodefaultlibs \
 		    -undefined_warning -fPIC -fvisibility=hidden")
-	elseif(WIN32)
-		set(OUTPUT_FILENAME "win.xpl")
 	endif()
 endif()
 

@@ -24,7 +24,6 @@
 #include <unistd.h>
 #include <ncurses.h>
 
-#include <acfutils/acfutils.h>
 #include <acfutils/assert.h>
 #include <acfutils/geom.h>
 #include <acfutils/list.h>
@@ -710,7 +709,7 @@ main(int argc, char **argv)
 	WINDOW *win;
 	bool_t gfx = B_TRUE;
 
-	acfutils_logfunc = (acfutils_logfunc_t)puts;
+	log_init((logfunc_t)puts, "xtcas");
 
 	list_create(&other_acf, sizeof (acf_t), offsetof(acf_t, node));
 
