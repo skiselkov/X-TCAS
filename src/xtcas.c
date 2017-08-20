@@ -54,8 +54,8 @@
 #define	CROSSING_RA_PENALTY	0.125		/* multiplier */
 #define	REVERSAL_RA_PENALTY	0.125		/* multiplier */
 
-#define	NORM_VERT_FILTER	FEET2MET(9900)	/* Used for the ABV and BLW */
-#define	SHORT_VERT_FILTER	FEET2MET(2700)	/* vertical filter modes */
+#define	LONG_VERT_FILTER	FEET2MET(9900)	/* Used for the ABV and BLW */
+#define	NORM_VERT_FILTER	FEET2MET(2700)	/* vertical filter modes */
 
 #define	OTH_TFC_DIST_THRESH		NM2MET(40)
 #define	PROX_DIST_THRESH		NM2MET(6)
@@ -667,13 +667,13 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		 */
 		switch (filter) {
 		case TCAS_FILTER_ABV:
-			if (pos[i].pos.elev > my_pos.elev + NORM_VERT_FILTER ||
-			    pos[i].pos.elev < my_pos.elev - SHORT_VERT_FILTER)
+			if (pos[i].pos.elev > my_pos.elev + LONG_VERT_FILTER ||
+			    pos[i].pos.elev < my_pos.elev - NORM_VERT_FILTER)
 				continue;
 			break;
 		case TCAS_FILTER_BLW:
-			if (pos[i].pos.elev > my_pos.elev + SHORT_VERT_FILTER ||
-			    pos[i].pos.elev < my_pos.elev - NORM_VERT_FILTER)
+			if (pos[i].pos.elev > my_pos.elev + NORM_VERT_FILTER ||
+			    pos[i].pos.elev < my_pos.elev - LONG_VERT_FILTER)
 				continue;
 			break;
 		default:
@@ -896,7 +896,7 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		 */
 		if (!acf->trend_data_ready || !my_acf->trend_data_ready ||
 		    acf->gs == 0 || ABS(acf->cur_pos.elev -
-		    my_acf->cur_pos.elev) > NORM_VERT_FILTER)
+		    my_acf->cur_pos.elev) > LONG_VERT_FILTER)
 			continue;
 
 		d_vvel = (acf->d_vvel >= D_VVEL_MAN_THRESH ? acf->d_vvel : 0);
@@ -989,10 +989,10 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 	 * Check if the altitude filter has been satisfied. Non-altitude-
 	 * reporting aircraft cannot become RA threats.
 	 */
-	filter_min -= (filter == TCAS_FILTER_ABV ? SHORT_VERT_FILTER :
-	    NORM_VERT_FILTER);
-	filter_max += (filter == TCAS_FILTER_BLW ? SHORT_VERT_FILTER :
-	    NORM_VERT_FILTER);
+	filter_min -= (filter == TCAS_FILTER_ABV ? NORM_VERT_FILTER :
+	    LONG_VERT_FILTER);
+	filter_max += (filter == TCAS_FILTER_BLW ? NORM_VERT_FILTER :
+	    LONG_VERT_FILTER);
 	if (oacf->alt_rptg) {
 		vert_filter = (oacf->cur_pos.elev >= filter_min &&
 		    oacf->cur_pos.elev <= filter_max);
