@@ -57,6 +57,7 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 static bool_t		inited = B_FALSE;
 static tcas_msg_t	cur_msg = -1;
 static double		cur_volume = 1.0;
+static alc_t		*alc = NULL;
 
 bool_t
 xtcas_snd_sys_init(const char *snd_dir)
@@ -66,7 +67,8 @@ xtcas_snd_sys_init(const char *snd_dir)
 	ASSERT(!inited);
 
 	/* no WAV/OpenAL calls before this */
-	if (!openal_init())
+	alc = openal_init(NULL, B_FALSE);
+	if (alc == NULL)
 		return (B_FALSE);
 
 	for (tcas_msg_t msg = 0; msg < RA_NUM_MSGS; msg++) {
@@ -74,7 +76,8 @@ xtcas_snd_sys_init(const char *snd_dir)
 
 		ASSERT3P(voice_msgs[msg].wav, ==, NULL);
 		pathname = mkpathname(snd_dir, voice_msgs[msg].file, NULL);
-		voice_msgs[msg].wav = wav_load(pathname, voice_msgs[msg].file);
+		voice_msgs[msg].wav = wav_load(pathname, voice_msgs[msg].file,
+		    alc);
 		if (voice_msgs[msg].wav == NULL) {
 			free(pathname);
 			goto errout;
@@ -94,7 +97,10 @@ errout:
 			voice_msgs[msg].wav = NULL;
 		}
 	}
-	openal_fini();
+	if (alc != NULL) {
+		openal_fini(alc);
+		alc = NULL;
+	}
 
 	return (B_FALSE);
 }
@@ -115,7 +121,8 @@ xtcas_snd_sys_fini(void)
 	}
 
 	/* no more OpenAL/WAV calls after this */
-	openal_fini();
+	openal_fini(alc);
+	alc = NULL;
 
 	inited = B_FALSE;
 }
