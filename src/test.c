@@ -391,11 +391,11 @@ step_acf(acf_t *acf, uint64_t now, uint64_t step)
 	acf->pos.y += dir.y;
 	acf->pos.z += acf->vs * step_s;
 
-	if (acf->threat_level >= RA_THREAT_PREV) {
+	if (acf != &my_acf) {
 		double d_h = vect2_abs(vect2_sub(VECT3_TO_VECT2(acf->pos),
 		    VECT3_TO_VECT2(my_acf.pos)));
 		d_h_min = MIN(d_h_min, d_h);
-		if (d_h < 30)
+		if (d_h < 150)
 			d_v_min = MIN(d_v_min, ABS(my_acf.pos.z - acf->pos.z));
 	}
 }
