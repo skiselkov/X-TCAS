@@ -1059,8 +1059,8 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		 */
 		if (hint != NULL && r_vel < APCH_SPD_THRESH &&
 		    oacf->alt_rptg &&
-		    ((d_h <= sl->dmod_TA && d_v <= sl->zthr_TA) ||
-		    (cpa->d_h <= sl->dmod_TA && cpa->d_v <= sl->zthr_TA))) {
+		    (cpa->d_h <= sl->dmod_TA || d_h <= sl->dmod_TA) &&
+		    (cpa->d_v <= sl->zthr_TA || d_v <= sl->zthr_TA)) {
 			/* Hints cannot exist on initial RAs */
 			ASSERT3U(tcas_state.adv_state, ==, ADV_STATE_RA);
 			dbg_log(threat, 1, "bogie %p RA_HINT(%d,%d) "
