@@ -34,12 +34,15 @@
 #include <acfutils/geom.h>
 #include <acfutils/log.h>
 #include <acfutils/helpers.h>
+#include <acfutils/perf.h>
 #include <acfutils/types.h>
 #include <acfutils/thread.h>
 
+#include "dbg_log.h"
 #include "snd_sys.h"
 #include "xtcas.h"
 #include "xplane.h"
+#include "xplane_test.h"
 
 #define	FLOOP_INTVAL			0.1
 #define	POS_UPDATE_INTVAL		0.1
@@ -54,8 +57,8 @@
 static bool_t intf_inited = B_FALSE;
 static struct {
 	dr_t	time;
-	dr_t	baro_alt;
-	dr_t	rad_alt;
+	dr_t	baro_alt_ft;
+	dr_t	rad_alt_ft;
 	dr_t	lat;
 	dr_t	lon;
 	dr_t	plane_x;
@@ -84,6 +87,12 @@ static double xp_get_time(void *handle);
 static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl);
 static void xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
 
+static XPLMCommandRef show_test_gui_cmd;
+static XPLMCommandRef hide_test_gui_cmd;
+static XPLMCommandRef mode_stby_cmd, mode_taonly_cmd, mode_tara_cmd;
+static XPLMCommandRef filter_all_cmd, filter_thrt_cmd, filter_abv_cmd;
+static XPLMCommandRef filter_blw_cmd;
+
 static const sim_intf_ops_t xp_intf_ops = {
 	.handle = NULL,
 	.get_time = xp_get_time,
@@ -111,8 +120,8 @@ static void
 sim_intf_init(void)
 {
 	fdr_find(&drs.time, "sim/time/total_running_time_sec");
-	fdr_find(&drs.baro_alt, "sim/flightmodel/misc/h_ind");
-	fdr_find(&drs.rad_alt,
+	fdr_find(&drs.baro_alt_ft, "sim/flightmodel/misc/h_ind");
+	fdr_find(&drs.rad_alt_ft,
 	    "sim/cockpit2/gauges/indicators/radio_altimeter_height_ft_pilot");
 	fdr_find(&drs.lat, "sim/flightmodel/position/latitude");
 	fdr_find(&drs.lon, "sim/flightmodel/position/longitude");
@@ -175,8 +184,8 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	/* grab our aircraft position */
 	my_acf_pos.lat = dr_getf(&drs.lat);
 	my_acf_pos.lon = dr_getf(&drs.lon);
-	my_acf_pos.elev = dr_getf(&drs.baro_alt);
-	my_acf_agl = dr_getf(&drs.rad_alt);
+	my_acf_pos.elev = FEET2MET(dr_getf(&drs.baro_alt_ft));
+	my_acf_agl = FEET2MET(dr_getf(&drs.rad_alt_ft));
 
 	/* grab all other aircraft positions */
 	for (int i = 0; i < MAX_MP_PLANES; i++) {
@@ -216,6 +225,9 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 
 		mutex_exit(&acf_pos_lock);
 	}
+
+	dbg_log(xplane, 1, "Collector run complete, %lu contacts",
+	    avl_numnodes(&acf_pos_tree));
 
 	return (1);
 }
@@ -287,25 +299,105 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 	return (-1.0);
 }
 
+static int
+tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
+{
+	UNUSED(refcon);
+	if (phase != xplm_CommandEnd)
+		return (1);
+	if (ref == mode_stby_cmd) {
+		xtcas_set_mode(TCAS_MODE_STBY);
+		logMsg("TCAS MODE: STBY");
+	} else if (ref == mode_taonly_cmd) {
+		xtcas_set_mode(TCAS_MODE_TAONLY);
+		logMsg("TCAS MODE: TA-ONLY");
+	} else if (ref == mode_tara_cmd) {
+		xtcas_set_mode(TCAS_MODE_TARA);
+		logMsg("TCAS MODE: TA/RA");
+	} else if (ref == filter_all_cmd) {
+		xtcas_set_filter(TCAS_FILTER_ALL);
+		logMsg("TCAS FILTER: ALL");
+	} else if (ref == filter_thrt_cmd) {
+		xtcas_set_filter(TCAS_FILTER_THRT);
+		logMsg("TCAS FILTER: THRT");
+	} else if (ref == filter_abv_cmd) {
+		xtcas_set_filter(TCAS_FILTER_ABV);
+		logMsg("TCAS FILTER: ABV");
+	} else if (ref == filter_blw_cmd) {
+		xtcas_set_filter(TCAS_FILTER_BLW);
+		logMsg("TCAS FILTER: BLW");
+	} else {
+		VERIFY_MSG(0, "Unknown command %p received", ref);
+	}
+	return (1);
+}
+
+static int
+test_gui_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
+{
+	UNUSED(refcon);
+	if (phase != xplm_CommandEnd)
+		return (1);
+	if (ref == show_test_gui_cmd) {
+		xplane_test_init();
+	} else {
+		ASSERT3P(ref, ==, hide_test_gui_cmd);
+		xplane_test_fini();
+	}
+	return (1);
+}
+
 PLUGIN_API int
 XPluginStart(char *name, char *sig, char *desc)
 {
-	char *snd_dir;
+	char *snd_dir, *p;
 
 	log_init(XPLMDebugString, "xtcas");
 
 	XPLMGetPluginInfo(XPLMGetMyID(), NULL, plugindir, NULL, NULL);
+#if	IBM
+	fix_pathsep(plugindir);
+#endif
+	/* cut off the trailing path component (our filename) */
+	if ((p = strrchr(plugindir, DIRSEP)) != NULL)
+		*p = '\0';
+	/* cut off an optional '32' or '64' trailing component */
+	if ((p = strrchr(plugindir, DIRSEP)) != NULL) {
+		if (strcmp(p + 1, "64") == 0 || strcmp(p + 1, "32") == 0)
+			*p = '\0';
+	}
 
 	strcpy(name, XTCAS_PLUGIN_NAME);
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
 	sim_intf_init();
 	snd_dir = mkpathname(plugindir, "data", "male1", NULL);
-	if (!xtcas_snd_sys_init(plugindir)) {
+	if (!xtcas_snd_sys_init(snd_dir)) {
 		free(snd_dir);
 		return (0);
 	}
 	free(snd_dir);
+
+	show_test_gui_cmd = XPLMCreateCommand("X-TCAS/show_debug_gui",
+	    "Show debugging interface");
+	hide_test_gui_cmd = XPLMCreateCommand("X-TCAS/hide_debug_gui",
+	    "Hide debugging interface");
+
+	mode_stby_cmd = XPLMCreateCommand("X-TCAS/mode_stby",
+	    "Set TCAS mode to STANDBY");
+	mode_taonly_cmd = XPLMCreateCommand("X-TCAS/mode_taonly",
+	    "Set TCAS mode to TA-ONLY");
+	mode_tara_cmd = XPLMCreateCommand("X-TCAS/mode_tara",
+	    "Set TCAS mode to TA/RA");
+
+	filter_all_cmd = XPLMCreateCommand("X-TCAS/filter_all",
+	    "Set TCAS display filter to ALL");
+	filter_thrt_cmd = XPLMCreateCommand("X-TCAS/filter_thrt",
+	    "Set TCAS display filter to THREAT");
+	filter_abv_cmd = XPLMCreateCommand("X-TCAS/filter_abv",
+	    "Set TCAS display filter to ABOVE");
+	filter_blw_cmd = XPLMCreateCommand("X-TCAS/filter_blw",
+	    "Set TCAS display filter to BELOW");
 
 	return (1);
 }
@@ -322,17 +414,58 @@ XPluginEnable(void)
 {
 	xtcas_init(&xp_intf_ops);
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
-	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Panel, 1, NULL);
+	XPLMRegisterDrawCallback(acf_pos_collector, xplm_Phase_Airplanes, 0,
+	    NULL);
+	XPLMRegisterCommandHandler(show_test_gui_cmd, test_gui_handler,
+	    1, NULL);
+	XPLMRegisterCommandHandler(hide_test_gui_cmd, test_gui_handler,
+	    1, NULL);
+
+	XPLMRegisterCommandHandler(mode_stby_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMRegisterCommandHandler(mode_taonly_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMRegisterCommandHandler(mode_tara_cmd, tcas_config_handler, 1,
+	    NULL);
+
+	XPLMRegisterCommandHandler(filter_all_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMRegisterCommandHandler(filter_thrt_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMRegisterCommandHandler(filter_abv_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMRegisterCommandHandler(filter_blw_cmd, tcas_config_handler, 1,
+	    NULL);
 	return (1);
 }
 
 PLUGIN_API void
 XPluginDisable(void)
 {
-	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Panel,
-	    1, NULL);
+	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Airplanes,
+	    0, NULL);
 	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);
+	XPLMUnregisterCommandHandler(show_test_gui_cmd, test_gui_handler,
+	    1, NULL);
+	XPLMUnregisterCommandHandler(hide_test_gui_cmd, test_gui_handler,
+	    1, NULL);
 	xtcas_fini();
+
+	XPLMUnregisterCommandHandler(mode_stby_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMUnregisterCommandHandler(mode_taonly_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMUnregisterCommandHandler(mode_tara_cmd, tcas_config_handler, 1,
+	    NULL);
+
+	XPLMUnregisterCommandHandler(filter_all_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMUnregisterCommandHandler(filter_thrt_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMUnregisterCommandHandler(filter_abv_cmd, tcas_config_handler, 1,
+	    NULL);
+	XPLMUnregisterCommandHandler(filter_blw_cmd, tcas_config_handler, 1,
+	    NULL);
 }
 
 PLUGIN_API void

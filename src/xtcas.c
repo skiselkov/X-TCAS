@@ -35,6 +35,7 @@
 #include "snd_sys.h"
 #include "SL.h"
 #include "xtcas.h"
+#include "xplane_test.h"
 
 #define	ALT_ROUND_MUL		FPM2MPS(100)	/* altitude rouding multiple */
 #define	EQ_ALT_THRESH		FEET2MET(100)	/* equal altitude threshold */
@@ -726,6 +727,7 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 			dbg_log(tcas, 2, "bogie %p contact lost", acf->acf_id);
 			if (ops->delete_contact != NULL)
 				ops->delete_contact(ops->handle, acf->acf_id);
+			xplane_test_delete_contact(acf->acf_id);
 			avl_remove(&other_acf_glob, acf);
 			free(acf);
 		}
@@ -1955,6 +1957,14 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 					    ra->info->vs.red_hi.min,
 					    ra->info->vs.red_hi.max);
 				}
+				xplane_test_update_RA(ADV_STATE_RA, msg,
+				    ri->type, ri->sense, ra->crossing,
+				    ra->reversal, ra->min_sep,
+				    min_green, max_green,
+				    ra->info->vs.red_lo.min,
+				    ra->info->vs.red_lo.max,
+				    ra->info->vs.red_hi.min,
+				    ra->info->vs.red_hi.max);
 			} else {
 				free(ra);
 			}
@@ -1982,6 +1992,8 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				    RA_MSG_TFC, -1, -1, B_FALSE, B_FALSE,
 				    0, 0, 0, 0, 0, 0, 0);
 			}
+			xplane_test_update_RA(ADV_STATE_TA, RA_MSG_TFC,
+			    -1, -1, B_FALSE, B_FALSE, 0, 0, 0, 0, 0, 0, 0);
 		}
 	} else if (tcas_state.adv_state != ADV_STATE_NONE &&
 	    now - tcas_state.change_t >= STATE_CHG_DELAY) {
@@ -1996,6 +2008,8 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 			    RA_MSG_CLEAR, -1, -1, B_FALSE, B_FALSE,
 			    0, 0, 0, 0, 0, 0, 0);
 		}
+		xplane_test_update_RA(ADV_STATE_NONE, RA_MSG_CLEAR, -1, -1,
+		    B_FALSE, B_FALSE, 0, 0, 0, 0, 0, 0, 0);
 		tcas_state.ra = NULL;
 		tcas_state.initial_ra_vs = NAN;
 		tcas_state.adv_state = ADV_STATE_NONE;
@@ -2019,17 +2033,32 @@ static void
 update_contacts(avl_tree_t *other_acf)
 {
 	if (tcas_state.filter == TCAS_FILTER_THRT &&
-	    tcas_state.adv_state == ADV_STATE_NONE &&
-	    ops->delete_contact != NULL) {
+	    tcas_state.adv_state == ADV_STATE_NONE) {
 		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 		    acf = AVL_NEXT(other_acf, acf)) {
-			ops->delete_contact(ops->handle, acf->acf_id);
+			if (ops->delete_contact != NULL)
+				ops->delete_contact(ops->handle, acf->acf_id);
+			xplane_test_delete_contact(acf->acf_id);
 		}
-	} else if (ops->update_contact != NULL) {
+	} else {
 		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 		    acf = AVL_NEXT(other_acf, acf)) {
-			ops->update_contact(ops->handle, acf->acf_id,
-			    acf->cur_pos, acf->trk, acf->vvel, acf->threat);
+			if (!acf->on_ground) {
+				if (ops->update_contact != NULL) {
+					ops->update_contact(ops->handle,
+					    acf->acf_id, acf->cur_pos,
+					    acf->trk, acf->vvel, acf->threat);
+				}
+				xplane_test_update_contact(acf->acf_id,
+				    acf->cur_pos, acf->trk, acf->vvel,
+				    acf->threat);
+			} else {
+				if (ops->delete_contact != NULL) {
+					ops->delete_contact(ops->handle,
+					    acf->acf_id);
+				}
+				xplane_test_delete_contact(acf->acf_id);
+			}
 		}
 	}
 }
