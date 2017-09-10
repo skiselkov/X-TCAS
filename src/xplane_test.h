@@ -29,7 +29,7 @@ void xplane_test_init(void);
 void xplane_test_fini(void);
 
 void xplane_test_update_contact(void *handle, void *acf_id, geo_pos3_t pos,
-    double trk, double vs, tcas_threat_t level);
+    vect3_t rel_pos, double trk, double vs, tcas_threat_t level);
 void xplane_test_delete_contact(void *handle, void *acf_id);
 void xplane_test_update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,

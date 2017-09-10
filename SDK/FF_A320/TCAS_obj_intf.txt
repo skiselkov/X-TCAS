@@ -16,18 +16,18 @@ uinteger mMode;		// Mode, 0 - STBY, 1 - TA, 2 - TA/RA
 Outputs:
 
 /*
- * PFD state variables
+ * PFD & ND state
  */
-uint32 mState;		// System state, 0 - STBY, 1 - TA, 2 - TA/RA
-uint32 mAdvisory;	// Advisory level, 0 - none, 1 - TA, 2 - RA
-floating mAdvisoryTrend[2];	// Advisory vertical trends
-uint32 mAdvisoryAreas;	// Advisory area flags, UP RED - (1<<0),
-			// GREEN - (1<<1), DN RED - (1<<2)
-binary mAlert;		// TCAS audio alert signal
+uint32 mState;			// System state, 0 - STBY, 1 - TA, 2 - TA/RA
+uint32 mAdvisory;		// Advisory level, 0 - none, 1 - TA, 2 - RA
+floating mAdvisoryTrend[2];	// Advisory green band pos (m/s, top & bottom)
+uint32 mAdvisoryAreas;		// Advisory area flags, Upper RED - (1 << 0),
+				// GREEN - (1 << 1), Bottom RED - (1 << 2)
+binary mAlert;			// TCAS audio alert signal
 
-	/*
-	 * Intruder update variabless. We can update one intruder per frame.
-	 */
+/*
+ * Intruder update. We can update one intruder per frame.
+ */
 uint32 mType;		// Intruder update type, 0 - none, 1 - OTHER,
 			// 2 - PROXIMATE, 3 - TRAFFIC ADV, 4 - RESOLUTION ADV
 floating mRelBearing;	// Intruder update relative bearing

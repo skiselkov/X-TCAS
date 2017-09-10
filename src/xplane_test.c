@@ -238,12 +238,13 @@ xplane_test_fini(void)
 
 void
 xplane_test_update_contact(void *handle, void *acf_id, geo_pos3_t pos,
-    double trk, double vs, tcas_threat_t level)
+    vect3_t pos_3d, double trk, double vs, tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
 
 	UNUSED(handle);
+	UNUSED(pos_3d);
 
 	if (!inited)
 		return;

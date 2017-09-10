@@ -2038,7 +2038,8 @@ update_contacts(avl_tree_t *other_acf)
 				if (out_ops != NULL) {
 					out_ops->update_contact(out_ops->handle,
 					    acf->acf_id, acf->cur_pos,
-					    acf->trk, acf->vvel, acf->threat);
+					    acf->cur_pos_3d, acf->trk,
+					    acf->vvel, acf->threat);
 				}
 			} else {
 				if (out_ops != NULL) {

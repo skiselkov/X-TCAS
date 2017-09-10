@@ -28,6 +28,7 @@
 #include <acfutils/assert.h>
 #include <acfutils/list.h>
 #include <acfutils/wav.h>
+#include <acfutils/time.h>
 
 #include "dbg_log.h"
 #include "snd_sys.h"
@@ -56,6 +57,10 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 
 static bool_t		inited = B_FALSE;
 static tcas_msg_t	cur_msg = -1;
+static tcas_msg_t	playing_msg = -1;
+static uint64_t		msg_started_t = 0;	/* microclock units */
+static uint64_t		msg_dur = 0;		/* microseconds */
+static bool_t		suppressed = B_FALSE;
 static double		cur_volume = 1.0;
 static alc_t		*alc = NULL;
 
@@ -127,6 +132,10 @@ xtcas_snd_sys_fini(void)
 	inited = B_FALSE;
 }
 
+/*
+ * Schedules a message for playback. This will be picked up by
+ * xtcas_snd_sys_run and played (if not suppressed).
+ */
 void
 xtcas_play_msg(tcas_msg_t msg)
 {
@@ -135,6 +144,53 @@ xtcas_play_msg(tcas_msg_t msg)
 	cur_msg = msg;
 }
 
+/*
+ * Stops playback of the currently playing message (if any).
+ */
+void
+xtcas_stop_msg(void)
+{
+	if (xtcas_msg_is_playing()) {
+		wav_stop(voice_msgs[playing_msg].wav);
+		playing_msg = -1u;
+	}
+}
+
+/*
+ * Sets the suppressing flag. Any new messages will be queued, but won't
+ * be played until suppression is lifted.
+ */
+void
+xtcas_set_suppressed(bool_t flag)
+{
+	if (flag) {
+		if (xtcas_msg_is_playing()) {
+			cur_msg = playing_msg;
+			xtcas_stop_msg();
+		}
+	}
+	suppressed = flag;
+}
+
+bool_t
+xtcas_is_suppressed(void)
+{
+	return (suppressed);
+}
+
+/*
+ * Returns true if a message is currently playing, false otherwise.
+ */
+bool_t
+xtcas_msg_is_playing(void)
+{
+	return (playing_msg != -1u && msg_started_t + msg_dur > microclock());
+}
+
+/*
+ * Main sound scheduling loop. You must call this periodically to let X-TCAS's
+ * sound system operate.
+ */
 void
 xtcas_snd_sys_run(double volume)
 {
@@ -148,10 +204,21 @@ xtcas_snd_sys_run(double volume)
 			wav_set_gain(voice_msgs[i].wav, volume);
 	}
 
+	/* While suppressed, don't play any messages, but keep them queued. */
+	if (suppressed)
+		return;
+
 	msg = cur_msg;
 	if ((int)msg != -1) {
+		uint64_t now = microclock();
+
 		cur_msg = -1u;
 		ASSERT3U(msg, <, RA_NUM_MSGS);
+		/* stop previous message if it is still playing */
+		xtcas_stop_msg();
 		(void) wav_play(voice_msgs[msg].wav);
+		playing_msg = msg;
+		msg_started_t = now;
+		msg_dur = SEC2USEC(voice_msgs[msg].wav->duration);
 	}
 }

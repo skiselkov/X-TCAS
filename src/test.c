@@ -945,13 +945,15 @@ get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 }
 
 static void
-update_contact(void *handle, void *acf_id, geo_pos3_t pos, double trk,
-    double vs, tcas_threat_t level)
+update_contact(void *handle, void *acf_id, geo_pos3_t pos, vect3_t pos_3d,
+    double trk, double vs, tcas_threat_t level)
 {
 	UNUSED(handle);
 	UNUSED(pos);
 	UNUSED(trk);
 	UNUSED(vs);
+	UNUSED(pos_3d);
+
 	for (acf_t *acf = list_head(&other_acf); acf != NULL;
 	    acf = list_next(&other_acf, acf)) {
 		if (acf_id == (void *)(uintptr_t)acf->id) {

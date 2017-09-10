@@ -41,12 +41,26 @@
 #include <acfutils/thread.h>
 
 #include "dbg_log.h"
+#include "snd_sys.h"
 #include "xtcas.h"
 
+#define	MAX_CONTACTS		100
+#define	LEVEL_VVEL_THRESH	FPM2MPS(300)
+
+typedef enum {
+	UPDATE_DELETE,
+	UPDATE_OTHER_THREAT,
+	UPDATE_PROX_THREAT,
+	UPDATE_TA_THREAT,
+	UPDATE_RA_THREAT
+} update_type_t;
+
 typedef struct {
+	bool_t		in_use;
+	bool_t		deleted;
+
 	const void	*acf_id;
-	geo_pos3_t	pos;
-	double		trk;
+	vect3_t		pos_3d;
 	double		vs;
 	tcas_threat_t	level;
 	avl_node_t	node;
@@ -54,7 +68,8 @@ typedef struct {
 
 SharedValuesInterface	svi;
 mutex_t			lock;
-static avl_tree_t	contacts;
+static avl_tree_t	contacts_tree;
+contact_t		contacts_array[MAX_CONTACTS];
 static struct {
 	bool_t		inited;
 
@@ -75,7 +90,7 @@ static struct {
 	int		adv_type;
 	int		green_band_top;
 	int		green_band_bottom;
-	int		adv_area_mask;
+	int		vs_area_mask;
 	int		alert;
 
 	/* per-intruder outputs */
@@ -89,7 +104,7 @@ static struct {
 
 static void ff_a320_update(double step, void *tag);
 static void update_contact(void *handle, void *acf_id, geo_pos3_t pos,
-    double trk, double vs, tcas_threat_t level);
+    vect3_t pos_3d, double trk, double vs, tcas_threat_t level);
 static void delete_contact(void *handle, void *acf_id);
 static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
@@ -152,8 +167,9 @@ ff_a320_intf_init(void)
 	svi.DataAddUpdate(ff_a320_update, NULL);
 
 	memset(&ids, 0, sizeof (ids));
+	memset(&contacts_array, 0, sizeof (contacts_array));
 	mutex_init(&lock);
-	avl_create(&contacts, ctc_compar, sizeof (contact_t),
+	avl_create(&contacts_tree, ctc_compar, sizeof (contact_t),
 	    offsetof(contact_t, node));
 
 	return (&ops);
@@ -163,15 +179,14 @@ void
 ff_a320_intf_fini(void)
 {
 	void *cookie = NULL;
-	contact_t *ctc;
 
 	if (svi.DataDelUpdate != NULL)
 		svi.DataDelUpdate(ff_a320_update, NULL);
 	mutex_destroy(&lock);
 
-	while ((ctc = avl_destroy_nodes(&contacts, &cookie)) != NULL)
-		free(ctc);
-	avl_destroy(&contacts);
+	while (avl_destroy_nodes(&contacts_tree, &cookie) != NULL)
+		;
+	avl_destroy(&contacts_tree);
 
 	dbg_log(ff_a320, 1, "fini");
 }
@@ -186,6 +201,16 @@ gets32(int id)
 	    svi.ValueName(id), type2str(type));
 	svi.ValueGet(id, &val);
 	return (val);
+}
+
+static inline void
+sets32(int id, int32_t val)
+{
+	unsigned int type = svi.ValueType(id);
+	ASSERT_MSG(type >= Value_Type_sint8 && type <= Value_Type_uint32,
+	    "%s isn't an integer type, instead it is %s",
+	    svi.ValueName(id), type2str(type));
+	svi.ValueSet(id, &val);
 }
 
 static inline float
@@ -347,7 +372,7 @@ ff_a320_ids_init(void)
 	ids.green_band_top = val_id("Aircraft.Navigation.TCAS.AdvisoryTrendUP");
 	ids.green_band_bottom =
 	    val_id("Aircraft.Navigation.TCAS.AdvisoryTrendDN");
-	ids.adv_area_mask = val_id("Aircraft.Navigation.TCAS.AdvisoryAreas");
+	ids.vs_area_mask = val_id("Aircraft.Navigation.TCAS.AdvisoryAreas");
 
 	ids.alert = val_id("Aircraft.Navigation.TCAS.Alert");
 
@@ -357,6 +382,14 @@ ff_a320_ids_init(void)
 static void
 ff_a320_update(double step, void *tag)
 {
+	static int last_slot = 0;
+	int i;
+	int vs_band_mask = 0;
+	double my_hdg, my_alt;
+	bool_t suppress;
+	tcas_mode_t mode;
+	tcas_filter_t filter;
+
 	UNUSED(step);
 	UNUSED(tag);
 
@@ -366,28 +399,168 @@ ff_a320_update(double step, void *tag)
 	VERIFY(svi.ValueName != NULL);
 
 	ff_a320_ids_init();
+
+	/* State input */
+	mode = gets32(ids.mode);
+	if (mode != xtcas_get_mode()) {
+		dbg_log(ff_a320, 1, "xtcas_set_mode:%d", mode);
+		xtcas_set_mode(mode);
+	}
+	switch (gets32(ids.filter)) {
+	case 0:
+		filter = TCAS_FILTER_THRT;
+		break;
+	case 1:
+		filter = TCAS_FILTER_ALL;
+		break;
+	case 2:
+		filter = TCAS_FILTER_ABV;
+		break;
+	case 3:
+		filter = TCAS_FILTER_BLW;
+		break;
+	}
+	if (filter != xtcas_get_filter()) {
+		dbg_log(ff_a320, 1, "xtcas_set_filter:%d", filter);
+		xtcas_set_filter(filter);
+	}
+
+	if (gets32(ids.cancel) != 0 && xtcas_msg_is_playing()) {
+		dbg_log(ff_a320, 1, "Cancelling playing message");
+		xtcas_stop_msg();
+	}
+	suppress = (gets32(ids.suppress) != 0);
+	if (suppress != xtcas_is_suppressed()) {
+		dbg_log(ff_a320, 1, "set suppressed %d", suppress);
+		xtcas_set_suppressed(suppress);
+	}
+
+	/* System-wide state output */
+	sets32(ids.sys_state, xtcas_get_mode());
+	sets32(ids.adv_type, tcas.adv);
+	sets32(ids.green_band_top, tcas.max_green);
+	sets32(ids.green_band_bottom, tcas.min_green);
+	if (tcas.upper_red)
+		vs_band_mask |= (1 << 0);
+	if (tcas.min_green != tcas.max_green)
+		vs_band_mask |= (1 << 1);
+	if (tcas.lower_red)
+		vs_band_mask |= (1 << 2);
+	sets32(ids.vs_area_mask, vs_band_mask);
+
+	sets32(ids.alert, xtcas_msg_is_playing());
+
+	/*
+	 * Per-aircraft updates.
+	 * We perform one update per call and keep track of the slot we last
+	 * serviced in `last_slot'.
+	 */
+
+	my_hdg = getf32(ids.hdg);
+	my_alt = getf32(ids.baro_alt);
+
+	mutex_enter(&lock);
+	for (i = 1; i <= MAX_CONTACTS; i++) {
+		int slot = (last_slot + i) % MAX_CONTACTS;
+		contact_t *ctc = &contacts_array[slot];
+
+		if (ctc->in_use) {
+			/* Update contact info */
+			vect3_t rel_pos = vect3_rot(ctc->pos_3d, my_hdg, 1);
+			double rbrg = dir2hdg(VECT3_TO_VECT2(rel_pos));
+			double rdist = vect2_abs(VECT3_TO_VECT2(rel_pos));
+			double ralt = rel_pos.z - my_alt;
+
+			dbg_log(ff_a320, 2, "ff_a320_update slot:%d acf_id:%p "
+			    "rbrg:%.1f rdist:%.0f ralt:%.0f vs:%.2f lvl:%d",
+			    slot, ctc->acf_id, rbrg, rdist, ralt, ctc->vs,
+			    ctc->level);
+
+			sets32(ids.intr_index, slot);
+			switch (ctc->level) {
+			case OTH_THREAT:
+				sets32(ids.intr_upd_type, 1);
+				break;
+			case PROX_THREAT:
+				sets32(ids.intr_upd_type, 2);
+				break;
+			case TA_THREAT:
+				sets32(ids.intr_upd_type, 3);
+				break;
+			case RA_THREAT_PREV:
+			case RA_THREAT_CORR:
+				sets32(ids.intr_upd_type, 4);
+				break;
+			}
+			setf32(ids.intr_rbrg, rbrg);
+			setf32(ids.intr_rdist, rdist);
+			setf32(ids.intr_ralt, ralt);
+			if (ctc->vs >= LEVEL_VVEL_THRESH)
+				sets32(ids.intr_trend, 1);
+			else if (ctc->vs <= -LEVEL_VVEL_THRESH)
+				sets32(ids.intr_trend, -1);
+			else
+				sets32(ids.intr_trend, 0);
+
+			break;
+		} else if (ctc->deleted) {
+			/* Reset contact slot to a clean status */
+			dbg_log(ff_a320, 2, "ff_a320_update delete slot:%d",
+			    slot);
+			sets32(ids.intr_index, slot);
+			sets32(ids.intr_upd_type, 0);
+			memset(&ctc, 0, sizeof (*ctc));
+			break;
+		}
+	}
+
+
+	last_slot += i;
+
+	mutex_exit(&lock);
 }
 
 static void
-update_contact(void *handle, void *acf_id, geo_pos3_t pos, double trk,
-    double vs, tcas_threat_t level)
+update_contact(void *handle, void *acf_id, geo_pos3_t pos, vect3_t pos_3d,
+    double trk, double vs, tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
 
+	UNUSED(pos);
 	UNUSED(handle);
+	UNUSED(trk);
+
+	dbg_log(ff_a320, 2, "update_contact acf_id:%p 3d:%.0fx%.0fx%.0f "
+	    "vs:%.2f lvl:%d", acf_id, pos_3d.x, pos_3d.y, pos_3d.z, vs, level);
 
 	srch.acf_id = acf_id;
-	ctc = avl_find(&contacts, &srch, &where);
+
+	mutex_enter(&lock);
+	ctc = avl_find(&contacts_tree, &srch, &where);
 	if (ctc == NULL) {
-		ctc = calloc(1, sizeof (*ctc));
+		for (int i = 0; i < MAX_CONTACTS; i++) {
+			if (!&contacts_array[i].in_use &&
+			    !&contacts_array[i].deleted) {
+				ctc = &contacts_array[i];
+				dbg_log(ff_a320, 2, "new contact, slot:%d", i);
+				break;
+			}
+		}
+		if (ctc == NULL) {
+			logMsg("CAUTION: X-TCAS is out of contact slots! "
+			    "Dropping contact %p.", acf_id);
+			mutex_exit(&lock);
+			return;
+		}
+		ctc->in_use = B_TRUE;
 		ctc->acf_id = acf_id;
-		avl_insert(&contacts, ctc, where);
+		avl_insert(&contacts_tree, ctc, where);
 	}
-	ctc->pos = pos;
-	ctc->trk = trk;
+	ctc->pos_3d = pos_3d;
 	ctc->vs = vs;
 	ctc->level = level;
+	mutex_exit(&lock);
 }
 
 static void
@@ -398,11 +571,15 @@ delete_contact(void *handle, void *acf_id)
 	UNUSED(handle);
 
 	srch.acf_id = acf_id;
-	ctc = avl_find(&contacts, &srch, NULL);
+	mutex_enter(&lock);
+	ctc = avl_find(&contacts_tree, &srch, NULL);
 	if (ctc != NULL) {
-		avl_remove(&contacts, ctc);
-		free(ctc);
+		dbg_log(ff_a320, 2, "delete_contact acf_id:%p", acf_id);
+		avl_remove(&contacts_tree, ctc);
+		ctc->in_use = B_FALSE;
+		ctc->deleted = B_TRUE;
 	}
+	mutex_exit(&lock);
 }
 
 static void
@@ -420,6 +597,7 @@ update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
 	UNUSED(reversal);
 	UNUSED(min_sep_cpa);
 
+	mutex_enter(&lock);
 	tcas.adv = adv;
 	if (min_green != max_green) {
 		tcas.min_green = min_green;
@@ -435,4 +613,8 @@ update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
 		tcas.upper_red = B_TRUE;
 		tcas.min_green = tcas.max_green = min_red_hi;
 	}
+	dbg_log(ff_a320, 1, "update_RA adv:%d ming:%.2f maxg:%.2f lored:%d "
+	    "hired:%d", tcas.adv, tcas.min_green, tcas.max_green,
+	    tcas.lower_red, tcas.upper_red);
+	mutex_exit(&lock);
 }

@@ -224,14 +224,19 @@ typedef struct {
 	 *	get_oth_acf_pos. This is the identifier by which X-TCAS
 	 *	discriminates between contacts.
 	 * 3) pos The current LAT/LON/ELEV of this contact.
-	 * 4) trk The current true track (in degrees) of this contact.
-	 * 5) vs The current vertical speed (in m/s) of this contact.
-	 * 6) level The current TCAS threat level of this aircraft.
+	 * 4) pos_3d Relative position in a north-up oriented Euclidian space,
+	 *	axes having the following meanings (all units in meters):
+	 *	X: west-to-east axis, west negative, east positive
+	 *	Y: south-to-north axis, south negative, north positive
+	 *	Z: absolute height above mean sea level
+	 * 5) trk The current true track (in degrees) of this contact.
+	 * 6) vs The current vertical speed (in m/s) of this contact.
+	 * 7) level The current TCAS threat level of this aircraft.
 	 *	This can be used to determine with which symbol the contact
 	 *	should be displayed (see tcas_threat_t).
 	 */
 	void	(*update_contact)(void *handle, void *acf_id, geo_pos3_t pos,
-		    double trk, double vs, tcas_threat_t level);
+		    vect3_t pos_3d, double trk, double vs, tcas_threat_t level);
 	/*
 	 * Deletes a contact that was previously acquired via get_oth_acf_pos.
 	 * Please note that X-TCAS may send a delete_contact before ever
