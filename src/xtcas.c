@@ -2145,6 +2145,8 @@ main_loop(void *ignored)
 	}
 	mutex_exit(&worker_lock);
 
+	dbg_log(tcas, 4, "shutdown");
+
 	destroy_RA_hints(&RA_hints);
 }
 

@@ -56,6 +56,7 @@
 #define	MAX_DR_NAME_LEN	256
 
 static bool_t intf_inited = B_FALSE;
+static bool_t xtcas_inited = B_FALSE;
 static struct {
 	dr_t	time;
 	dr_t	baro_alt_ft;
@@ -87,6 +88,9 @@ static char plugindir[512] = { 0 };
 static double xp_get_time(void *handle);
 static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl);
 static void xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
+
+static int test_gui_handler(XPLMCommandRef, XPLMCommandPhase, void *);
+static int tcas_config_handler(XPLMCommandRef, XPLMCommandPhase, void *);
 
 static XPLMCommandRef show_test_gui_cmd;
 static XPLMCommandRef hide_test_gui_cmd;
@@ -300,8 +304,45 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 	UNUSED(refcon);
 
 	cur_sim_time = dr_getf(&drs.time);
-	xtcas_run();
-	xtcas_snd_sys_run(volume);
+
+	if (!xtcas_inited) {
+		const sim_intf_output_ops_t *out_ops = ff_a320_intf_init();
+
+		if (out_ops != NULL) {
+			/* FF A320 integration mode */
+			ff_a320_intf_inited = B_TRUE;
+		} else {
+			/* Stand-alone mode */
+			out_ops = &xplane_test_out_ops;
+
+			XPLMRegisterCommandHandler(show_test_gui_cmd,
+			    test_gui_handler, 1, NULL);
+			XPLMRegisterCommandHandler(hide_test_gui_cmd,
+			    test_gui_handler, 1, NULL);
+
+			XPLMRegisterCommandHandler(mode_stby_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMRegisterCommandHandler(mode_taonly_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMRegisterCommandHandler(mode_tara_cmd,
+			    tcas_config_handler, 1, NULL);
+
+			XPLMRegisterCommandHandler(filter_all_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMRegisterCommandHandler(filter_thrt_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMRegisterCommandHandler(filter_abv_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMRegisterCommandHandler(filter_blw_cmd,
+			    tcas_config_handler, 1, NULL);
+		}
+
+		xtcas_init(&xp_intf_in_ops, out_ops);
+		xtcas_inited = B_TRUE;
+	} else {
+		xtcas_run();
+		xtcas_snd_sys_run(volume);
+	}
 
 	return (-1.0);
 }
@@ -378,7 +419,7 @@ XPluginStart(char *name, char *sig, char *desc)
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
 	sim_intf_init();
-	snd_dir = mkpathname(plugindir, "data", "male1", NULL);
+	snd_dir = mkpathname(plugindir, "data", "msgs", NULL);
 	if (!xtcas_snd_sys_init(snd_dir)) {
 		free(snd_dir);
 		return (0);
@@ -419,43 +460,9 @@ XPluginStop(void)
 PLUGIN_API int
 XPluginEnable(void)
 {
-	const sim_intf_output_ops_t *out_ops = NULL;
-
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector,
 	    xplm_Phase_Airplanes, 0, NULL);
-
-	out_ops = ff_a320_intf_init();
-	if (out_ops != NULL) {
-		/* FF A320 integration mode */
-		ff_a320_intf_inited = B_TRUE;
-	} else {
-		/* Stand-alone mode */
-		out_ops = &xplane_test_out_ops;
-
-		XPLMRegisterCommandHandler(show_test_gui_cmd, test_gui_handler,
-		    1, NULL);
-		XPLMRegisterCommandHandler(hide_test_gui_cmd, test_gui_handler,
-		    1, NULL);
-
-		XPLMRegisterCommandHandler(mode_stby_cmd, tcas_config_handler,
-		    1, NULL);
-		XPLMRegisterCommandHandler(mode_taonly_cmd, tcas_config_handler,
-		    1, NULL);
-		XPLMRegisterCommandHandler(mode_tara_cmd, tcas_config_handler,
-		    1, NULL);
-
-		XPLMRegisterCommandHandler(filter_all_cmd, tcas_config_handler,
-		    1, NULL);
-		XPLMRegisterCommandHandler(filter_thrt_cmd, tcas_config_handler,
-		    1, NULL);
-		XPLMRegisterCommandHandler(filter_abv_cmd, tcas_config_handler,
-		    1, NULL);
-		XPLMRegisterCommandHandler(filter_blw_cmd, tcas_config_handler,
-		    1, NULL);
-	}
-
-	xtcas_init(&xp_intf_in_ops, out_ops);
 
 	return (1);
 }
@@ -463,38 +470,43 @@ XPluginEnable(void)
 PLUGIN_API void
 XPluginDisable(void)
 {
-	xtcas_fini();
+	if (xtcas_inited) {
+		xtcas_fini();
+
+		if (ff_a320_intf_inited) {
+			/* FF A320 integration mode */
+			ff_a320_intf_fini();
+			ff_a320_intf_inited = B_FALSE;
+		} else {
+			/* Stand-alone mode */
+			XPLMUnregisterCommandHandler(show_test_gui_cmd,
+			    test_gui_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(hide_test_gui_cmd,
+			    test_gui_handler, 1, NULL);
+
+			XPLMUnregisterCommandHandler(mode_stby_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(mode_taonly_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(mode_tara_cmd,
+			    tcas_config_handler, 1, NULL);
+
+			XPLMUnregisterCommandHandler(filter_all_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(filter_thrt_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(filter_abv_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(filter_blw_cmd,
+			    tcas_config_handler, 1, NULL);
+		}
+
+		xtcas_inited = B_FALSE;
+	}
+
 	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Airplanes,
 	    0, NULL);
 	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);
-
-	if (ff_a320_intf_inited) {
-		/* FF A320 integration mode */
-		ff_a320_intf_fini();
-		ff_a320_intf_inited = B_FALSE;
-	} else {
-		/* Stand-alone mode */
-		XPLMUnregisterCommandHandler(show_test_gui_cmd,
-		    test_gui_handler, 1, NULL);
-		XPLMUnregisterCommandHandler(hide_test_gui_cmd,
-		    test_gui_handler, 1, NULL);
-
-		XPLMUnregisterCommandHandler(mode_stby_cmd,
-		    tcas_config_handler, 1, NULL);
-		XPLMUnregisterCommandHandler(mode_taonly_cmd,
-		    tcas_config_handler, 1, NULL);
-		XPLMUnregisterCommandHandler(mode_tara_cmd,
-		    tcas_config_handler, 1, NULL);
-
-		XPLMUnregisterCommandHandler(filter_all_cmd,
-		    tcas_config_handler, 1, NULL);
-		XPLMUnregisterCommandHandler(filter_thrt_cmd,
-		    tcas_config_handler, 1, NULL);
-		XPLMUnregisterCommandHandler(filter_abv_cmd,
-		    tcas_config_handler, 1, NULL);
-		XPLMUnregisterCommandHandler(filter_blw_cmd,
-		    tcas_config_handler, 1, NULL);
-	}
 }
 
 PLUGIN_API void

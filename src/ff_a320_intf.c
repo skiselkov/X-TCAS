@@ -112,6 +112,8 @@ static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     double max_green, double min_red_lo, double max_red_lo,
     double min_red_hi, double max_red_hi);
 
+static const char *type2str(unsigned int t);
+
 static const sim_intf_output_ops_t ops = {
 	.handle = NULL,
 	.update_contact = update_contact,
@@ -164,7 +166,7 @@ ff_a320_intf_init(void)
 		return (NULL);
 	}
 
-	svi.DataAddUpdate(ff_a320_update, NULL);
+	svi.DataAddUpdate((SharedDataUpdateProc)ff_a320_update, NULL);
 
 	memset(&ids, 0, sizeof (ids));
 	memset(&contacts_array, 0, sizeof (contacts_array));
@@ -181,7 +183,7 @@ ff_a320_intf_fini(void)
 	void *cookie = NULL;
 
 	if (svi.DataDelUpdate != NULL)
-		svi.DataDelUpdate(ff_a320_update, NULL);
+		svi.DataDelUpdate((SharedDataUpdateProc)ff_a320_update, NULL);
 	mutex_destroy(&lock);
 
 	while (avl_destroy_nodes(&contacts_tree, &cookie) != NULL)
@@ -388,7 +390,7 @@ ff_a320_update(double step, void *tag)
 	double my_hdg, my_alt;
 	bool_t suppress;
 	tcas_mode_t mode;
-	tcas_filter_t filter;
+	tcas_filter_t filter = TCAS_FILTER_ALL;
 
 	UNUSED(step);
 	UNUSED(tag);
@@ -438,8 +440,8 @@ ff_a320_update(double step, void *tag)
 	/* System-wide state output */
 	sets32(ids.sys_state, xtcas_get_mode());
 	sets32(ids.adv_type, tcas.adv);
-	sets32(ids.green_band_top, tcas.max_green);
-	sets32(ids.green_band_bottom, tcas.min_green);
+	setf32(ids.green_band_top, tcas.max_green);
+	setf32(ids.green_band_bottom, tcas.min_green);
 	if (tcas.upper_red)
 		vs_band_mask |= (1 << 0);
 	if (tcas.min_green != tcas.max_green)
@@ -509,11 +511,10 @@ ff_a320_update(double step, void *tag)
 			    slot);
 			sets32(ids.intr_index, slot);
 			sets32(ids.intr_upd_type, 0);
-			memset(&ctc, 0, sizeof (*ctc));
+			memset(ctc, 0, sizeof (*ctc));
 			break;
 		}
 	}
-
 
 	last_slot += i;
 

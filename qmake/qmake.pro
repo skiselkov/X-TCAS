@@ -27,9 +27,10 @@ INCLUDEPATH += ../SDK
 # Always just use the shipped OpenAL headers for predictability.
 # The ABI is X-Plane-internal and stable anyway.
 INCLUDEPATH += ../OpenAL/include
+INCLUDEPATH += $$[LIBACFUTILS]/src
 
 QMAKE_CFLAGS += -std=c99 -g -W -Wall -Wextra -Werror -fvisibility=hidden
-QMAKE_CFLAGS += -Wunused-result
+QMAKE_CFLAGS += -Wunused-result -DTEST_STANDALONE_BUILD=0
 
 # _GNU_SOURCE needed on Linux for getline()
 # DEBUG - used by our ASSERT macro
@@ -56,14 +57,29 @@ win32 {
 }
 
 win32:contains(CROSS_COMPILE, x86_64-w64-mingw32-) {
+	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-64 \
+	    --cflags")
+
+	# This must go first so GCC finds the deps in the latter libraries
+	LIBS += -L $$[LIBACFUTILS]/qmake/win64 -lacfutils
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-64 --libs")
 	LIBS += -lXPLM_64
 	LIBS += -L../OpenAL/libs/Win64 -lOpenAL32
+	LIBS += -L../GL_for_Windows/lib -lopengl32
+	LIBS += -ldbghelp
 }
 
 win32:contains(CROSS_COMPILE, i686-w64-mingw32-) {
+	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-32 \
+	    --cflags")
+	LIBS += -L $$[LIBACFUTILS]/qmake/win32 -lacfutils
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-32 --libs")
+
 	LIBS += -lXPLM
 	LIBS += -L../OpenAL/libs/Win32 -lOpenAL32
+	LIBS += -L../GL_for_Windows/lib -lopengl32
 	DEFINES += __MIDL_user_allocate_free_DEFINED__
+	LIBS += -ldbghelp
 }
 
 unix:!macx {
@@ -72,11 +88,18 @@ unix:!macx {
 	LIBS += -nodefaultlibs
 }
 
+linux-g++-64 {
+	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-64 \
+	    --cflags")
+	LIBS += -L $$[LIBACFUTILS]/qmake/lin64 -lacfutils
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-64 --libs")
+}
+
 linux-g++-32 {
-	# The stack protector forces us to depend on libc,
-	# but we'd prefer to be static.
-	QMAKE_CFLAGS += -fno-stack-protector
-	LIBS += -fno-stack-protector
+	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-32 \
+	    --cflags")
+	LIBS += -L$$[LIBACFUTILS]/qmake/lin32 -lacfutils
+	LIBS += -lssp_nonshared
 }
 
 macx {
@@ -84,7 +107,7 @@ macx {
 	TARGET = mac.xpl
 	INCLUDEPATH += ../OpenAL/include
 	LIBS += -F../SDK/Libraries/Mac
-	LIBS += -framework XPLM -framework OpenAL
+	LIBS += -framework XPLM -framework OpenAL -framework OpenGL
 
 	# To make sure we run on everything that X-Plane 10 ran on
 	QMAKE_MACOSX_DEPLOYMENT_TARGET=10.6
@@ -96,35 +119,30 @@ macx {
 	QMAKE_LFLAGS -= -stdlib=libc++
 }
 
+macx-clang {
+	LIBS += -L$$[LIBACFUTILS]/qmake/mac64 -lacfutils
+}
+
+macx-clang-32 {
+	LIBS += -L$$[LIBACFUTILS]/qmake/mac32 -lacfutils
+}
+
 HEADERS += \
-	../src/avl.h \
-	../src/helpers.h \
-	../src/log.h \
+	../src/dbg_log.h \
+	../src/ff_a320_intf.h \
 	../src/pos.h \
 	../src/SL.h \
-	../src/time.h \
-	../src/xplane.h \
-	../src/geom.h \
-	../src/list.h \
-	../src/math.h \
-	../src/riff.h \
 	../src/snd_sys.h \
-	../src/thread.h \
-	../src/wav.h \
+	../src/xplane.h \
+	../src/xplane_test.h \
 	../src/xtcas.h
+
 SOURCES += \
-	../src/avl.c \
-	../src/helpers.c \
-	../src/log.c \
+	../src/dbg_log.c \
+	../src/ff_a320_intf.c \
 	../src/pos.c \
 	../src/SL.c \
-	../src/time.c \
-	../src/xplane.c \
-	../src/geom.c \
-	../src/list.c \
-	../src/math.c \
-	../src/riff.c \
 	../src/snd_sys.c \
-	../src/thread.c \
-	../src/wav.c \
+	../src/xplane.c \
+	../src/xplane_test.c \
 	../src/xtcas.c
