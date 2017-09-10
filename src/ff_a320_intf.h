@@ -16,40 +16,20 @@
  * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
-#ifndef	_XTCAS_DBG_LOG_H_
-#define	_XTCAS_DBG_LOG_H_
+#ifndef	_XTCAS_FF_A320_H_
+#define	_XTCAS_FF_A320_H_
 
-#ifdef	__cplusplus
+#include "xtcas.h"
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct {
-	int all;
-	int snd;
-	int wav;
-	int tcas;
-	int xplane;
-	int test;
-	int ra;
-	int cpa;
-	int sl;
-	int contact;
-	int threat;
-	int ff_a320;
-} debug_config_t;
+const sim_intf_output_ops_t *ff_a320_intf_init(void);
+void ff_a320_intf_fini(void);
 
-extern debug_config_t xtcas_dbg;
-
-#define dbg_log(class, level, ...) \
-	do { \
-		if (xtcas_dbg.class >= level || xtcas_dbg.all >= level) { \
-			log_impl(log_basename(__FILE__), __LINE__, \
-			    "[" #class "/" #level "] " __VA_ARGS__); \
-		} \
-	} while (0)
-
-#ifdef	__cplusplus
+#ifdef __cplusplus
 }
 #endif
 
-#endif	/* _XTCAS_DBG_LOG_H_ */
+#endif	/* _XTCAS_FF_A320_H_ */

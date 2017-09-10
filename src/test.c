@@ -99,11 +99,15 @@ static void update_RA_prediction(void *handle, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
     bool_t reversal, double min_sep_cpa);
 
-static sim_intf_ops_t test_ops = {
+static sim_intf_input_ops_t test_in_ops = {
 	.handle = NULL,
 	.get_time = get_time,
 	.get_my_acf_pos = get_my_acf_pos,
-	.get_oth_acf_pos = get_oth_acf_pos,
+	.get_oth_acf_pos = get_oth_acf_pos
+};
+
+static sim_intf_output_ops_t test_out_ops = {
+	.handle = NULL,
 	.update_contact = update_contact,
 	.delete_contact = delete_contact,
 	.update_RA = update_RA,
@@ -777,7 +781,7 @@ main(int argc, char **argv)
 		return (1);
 	}
 
-	xtcas_init(&test_ops);
+	xtcas_init(&test_in_ops, &test_out_ops);
 	xtcas_set_mode(TCAS_MODE_TARA);
 	if (!xtcas_snd_sys_init(snd_dir))
 		return (1);

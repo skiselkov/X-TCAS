@@ -196,13 +196,18 @@ typedef struct {
 	 */
 	void	(*get_oth_acf_pos)(void *handle, acf_pos_t **pos_p,
 		    size_t *num);
+} sim_intf_input_ops_t;
 
+typedef struct {
 	/*
 	 * OUTPUT:
 	 * These are the X-TCAS output functions. They represent how X-TCAS
 	 * tells the aircraft's avionics about traffic threats and possible
 	 * resolution advisories.
 	 */
+
+	/* Interface handle - for use by the interface provider */
+	void	*handle;
 
 	/*
 	 * This tells the avionics about TCAS aircraft contacts. It is called
@@ -286,15 +291,16 @@ typedef struct {
 	/*
 	 * This is similar to update_RA, but provides 1-second updates to
 	 * X-TCAS's internal logic as it updates its estimates. It's use
-	 * is mainly in debugging X-TCAS.
+	 * is mainly in debugging X-TCAS. Providing this callback is optional.
 	 */
 	void	(*update_RA_prediction)(void *handle, tcas_msg_t msg,
 		    tcas_RA_type_t type, tcas_RA_sense_t sense,
 		    bool_t crossing, bool_t reversal, double min_sep_cpa);
-} sim_intf_ops_t;
+} sim_intf_output_ops_t;
 
 void xtcas_run(void);
-void xtcas_init(const sim_intf_ops_t *const intf_ops);
+void xtcas_init(const sim_intf_input_ops_t *const intf_input_ops,
+    const sim_intf_output_ops_t *const intf_output_ops);
 void xtcas_fini(void);
 
 /*

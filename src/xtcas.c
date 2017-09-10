@@ -35,7 +35,6 @@
 #include "snd_sys.h"
 #include "SL.h"
 #include "xtcas.h"
-#include "xplane_test.h"
 
 #define	ALT_ROUND_MUL		FPM2MPS(100)	/* altitude rouding multiple */
 #define	EQ_ALT_THRESH		FEET2MET(100)	/* equal altitude threshold */
@@ -475,7 +474,8 @@ static thread_t worker_thr;
 static mutex_t worker_lock;
 static bool_t worker_shutdown = B_FALSE;
 
-static const sim_intf_ops_t *ops = NULL;
+static const sim_intf_input_ops_t *in_ops = NULL;
+static const sim_intf_output_ops_t *out_ops = NULL;
 
 static const char *
 RA_msg2str(tcas_msg_t msg)
@@ -613,7 +613,7 @@ RA_hint_compar(const void *ha, const void *hb)
 static void
 update_my_position(double t)
 {
-	ops->get_my_acf_pos(ops->handle, &my_acf_glob.cur_pos,
+	in_ops->get_my_acf_pos(in_ops->handle, &my_acf_glob.cur_pos,
 	    &my_acf_glob.agl);
 	my_acf_glob.cur_pos_3d = VECT3(0, 0, my_acf_glob.cur_pos.elev);
 	xtcas_obj_pos_update(&my_acf_glob.pos_upd, t, my_acf_glob.cur_pos,
@@ -648,7 +648,7 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 	tcas_filter_t filter = tcas_state.filter;
 	tcas_mode_t mode = tcas_state.mode;
 
-	ops->get_oth_acf_pos(ops->handle, &pos, &count);
+	in_ops->get_oth_acf_pos(in_ops->handle, &pos, &count);
 
 	/* walk the tree and mark all acf as out-of-date */
 	for (tcas_acf_t *acf = avl_first(&other_acf_glob); acf != NULL;
@@ -725,9 +725,10 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		acf_next = AVL_NEXT(&other_acf_glob, acf);
 		if (!acf->up_to_date) {
 			dbg_log(tcas, 2, "bogie %p contact lost", acf->acf_id);
-			if (ops->delete_contact != NULL)
-				ops->delete_contact(ops->handle, acf->acf_id);
-			xplane_test_delete_contact(acf->acf_id);
+			if (out_ops != NULL) {
+				out_ops->delete_contact(out_ops->handle,
+				    acf->acf_id);
+			}
 			avl_remove(&other_acf_glob, acf);
 			free(acf);
 		}
@@ -1915,8 +1916,9 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		}
 
 		if (ra != NULL) {
-			if (ops->update_RA_prediction) {
-				ops->update_RA_prediction(ops->handle,
+			if (out_ops != NULL &&
+			    out_ops->update_RA_prediction != NULL) {
+				out_ops->update_RA_prediction(out_ops->handle,
 				    ra->info->msg, ra->info->type,
 				    ra->info->sense, ra->crossing,
 				    ra->reversal, ra->min_sep);
@@ -1946,8 +1948,8 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 					min_green = ra->info->vs.out.min;
 					max_green = ra->info->vs.out.max;
 				}
-				if (ops->update_RA != NULL) {
-					ops->update_RA(ops->handle,
+				if (out_ops != NULL) {
+					out_ops->update_RA(out_ops->handle,
 					    ADV_STATE_RA, msg, ri->type,
 					    ri->sense, ra->crossing,
 					    ra->reversal, ra->min_sep,
@@ -1957,14 +1959,6 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 					    ra->info->vs.red_hi.min,
 					    ra->info->vs.red_hi.max);
 				}
-				xplane_test_update_RA(ADV_STATE_RA, msg,
-				    ri->type, ri->sense, ra->crossing,
-				    ra->reversal, ra->min_sep,
-				    min_green, max_green,
-				    ra->info->vs.red_lo.min,
-				    ra->info->vs.red_lo.max,
-				    ra->info->vs.red_hi.min,
-				    ra->info->vs.red_hi.max);
 			} else {
 				free(ra);
 			}
@@ -1987,13 +1981,11 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 			tcas_state.ra = NULL;
 			tcas_state.initial_ra_vs = NAN;
 			tcas_state.adv_state = ADV_STATE_TA;
-			if (ops->update_RA != NULL) {
-				ops->update_RA(ops->handle, ADV_STATE_TA,
-				    RA_MSG_TFC, -1, -1, B_FALSE, B_FALSE,
-				    0, 0, 0, 0, 0, 0, 0);
+			if (out_ops != NULL) {
+				out_ops->update_RA(out_ops->handle,
+				    ADV_STATE_TA, RA_MSG_TFC, -1, -1, B_FALSE,
+				    B_FALSE, 0, 0, 0, 0, 0, 0, 0);
 			}
-			xplane_test_update_RA(ADV_STATE_TA, RA_MSG_TFC,
-			    -1, -1, B_FALSE, B_FALSE, 0, 0, 0, 0, 0, 0, 0);
 		}
 	} else if (tcas_state.adv_state != ADV_STATE_NONE &&
 	    now - tcas_state.change_t >= STATE_CHG_DELAY) {
@@ -2003,13 +1995,11 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		if (tcas_state.adv_state == ADV_STATE_RA)
 			xtcas_play_msg(RA_MSG_CLEAR);
 		free(tcas_state.ra);
-		if (ops->update_RA != NULL) {
-			ops->update_RA(ops->handle, ADV_STATE_NONE,
+		if (out_ops != NULL) {
+			out_ops->update_RA(out_ops->handle, ADV_STATE_NONE,
 			    RA_MSG_CLEAR, -1, -1, B_FALSE, B_FALSE,
 			    0, 0, 0, 0, 0, 0, 0);
 		}
-		xplane_test_update_RA(ADV_STATE_NONE, RA_MSG_CLEAR, -1, -1,
-		    B_FALSE, B_FALSE, 0, 0, 0, 0, 0, 0, 0);
 		tcas_state.ra = NULL;
 		tcas_state.initial_ra_vs = NAN;
 		tcas_state.adv_state = ADV_STATE_NONE;
@@ -2036,28 +2026,25 @@ update_contacts(avl_tree_t *other_acf)
 	    tcas_state.adv_state == ADV_STATE_NONE) {
 		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 		    acf = AVL_NEXT(other_acf, acf)) {
-			if (ops->delete_contact != NULL)
-				ops->delete_contact(ops->handle, acf->acf_id);
-			xplane_test_delete_contact(acf->acf_id);
+			if (out_ops != NULL) {
+				out_ops->delete_contact(out_ops->handle,
+				    acf->acf_id);
+			}
 		}
 	} else {
 		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 		    acf = AVL_NEXT(other_acf, acf)) {
 			if (!acf->on_ground) {
-				if (ops->update_contact != NULL) {
-					ops->update_contact(ops->handle,
+				if (out_ops != NULL) {
+					out_ops->update_contact(out_ops->handle,
 					    acf->acf_id, acf->cur_pos,
 					    acf->trk, acf->vvel, acf->threat);
 				}
-				xplane_test_update_contact(acf->acf_id,
-				    acf->cur_pos, acf->trk, acf->vvel,
-				    acf->threat);
 			} else {
-				if (ops->delete_contact != NULL) {
-					ops->delete_contact(ops->handle,
+				if (out_ops != NULL) {
+					out_ops->delete_contact(out_ops->handle,
 					    acf->acf_id);
 				}
-				xplane_test_delete_contact(acf->acf_id);
 			}
 		}
 	}
@@ -2067,7 +2054,7 @@ static void
 main_loop(void *ignored)
 {
 	const SL_t *sl = NULL;
-	double last_t = ops->get_time(ops->handle);
+	double last_t = in_ops->get_time(in_ops->handle);
 	avl_tree_t RA_hints;
 
 	dbg_log(tcas, 4, "main_loop: entry (%.1f)", last_t);
@@ -2082,7 +2069,7 @@ main_loop(void *ignored)
 	for (double now = microclock(); !worker_shutdown; now = microclock()) {
 		tcas_acf_t my_acf;
 		avl_tree_t other_acf, cpas;
-		double now_t = ops->get_time(ops->handle);
+		double now_t = in_ops->get_time(in_ops->handle);
 
 		dbg_log(tcas, 4, "main_loop: start (%.1f)", now_t);
 
@@ -2163,7 +2150,7 @@ main_loop(void *ignored)
 void
 xtcas_run(void)
 {
-	double t = ops->get_time(ops->handle);
+	double t = in_ops->get_time(in_ops->handle);
 
 	dbg_log(tcas, 4, "run: %.1f", t);
 
@@ -2186,9 +2173,20 @@ xtcas_run(void)
 }
 
 void
-xtcas_init(const sim_intf_ops_t *intf_ops)
+xtcas_init(const sim_intf_input_ops_t *intf_input_ops,
+    const sim_intf_output_ops_t *intf_output_ops)
 {
 	dbg_log(tcas, 1, "init");
+
+	ASSERT(intf_input_ops != NULL);
+	ASSERT(intf_input_ops->get_time != NULL);
+	ASSERT(intf_input_ops->get_my_acf_pos != NULL);
+	ASSERT(intf_input_ops->get_oth_acf_pos != NULL);
+	if (intf_output_ops != NULL) {
+		ASSERT(intf_output_ops->update_contact != NULL);
+		ASSERT(intf_output_ops->delete_contact != NULL);
+		ASSERT(intf_output_ops->update_RA != NULL);
+	}
 
 	memset(&my_acf_glob, 0, sizeof (my_acf_glob));
 	avl_create(&other_acf_glob, acf_compar,
@@ -2198,7 +2196,8 @@ xtcas_init(const sim_intf_ops_t *intf_ops)
 	memset(&tcas_state, 0, sizeof (tcas_state));
 	tcas_state.initial_ra_vs = NAN;
 
-	ops = intf_ops;
+	in_ops = intf_input_ops;
+	out_ops = intf_output_ops;
 
 	mutex_init(&worker_lock);
 	cv_init(&worker_cv);

@@ -237,11 +237,13 @@ xplane_test_fini(void)
 }
 
 void
-xplane_test_update_contact(void *acf_id, geo_pos3_t pos,
+xplane_test_update_contact(void *handle, void *acf_id, geo_pos3_t pos,
     double trk, double vs, tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
+
+	UNUSED(handle);
 
 	if (!inited)
 		return;
@@ -265,9 +267,11 @@ xplane_test_update_contact(void *acf_id, geo_pos3_t pos,
 }
 
 void
-xplane_test_delete_contact(void *acf_id)
+xplane_test_delete_contact(void *handle, void *acf_id)
 {
 	contact_t srch, *ctc;
+
+	UNUSED(handle);
 
 	if (!inited)
 		return;
@@ -284,12 +288,14 @@ xplane_test_delete_contact(void *acf_id)
 }
 
 void
-xplane_test_update_RA(tcas_adv_t adv, tcas_msg_t msg, tcas_RA_type_t type,
-    tcas_RA_sense_t sense, bool_t crossing, bool_t reversal, double min_sep_cpa,
-    double min_green, double max_green, double min_red_lo, double max_red_lo,
-    double min_red_hi, double max_red_hi)
+xplane_test_update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
+    tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
+    bool_t reversal, double min_sep_cpa, double min_green, double max_green,
+    double min_red_lo, double max_red_lo, double min_red_hi, double max_red_hi)
 {
 	const char *adv_str, *sense_str;
+
+	UNUSED(handle);
 
 	if (!inited)
 		return;

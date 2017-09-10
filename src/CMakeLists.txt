@@ -27,8 +27,8 @@ if("${TEST_STANDALONE_BUILD}" EQUAL "1")
 	LIST(APPEND SRC test.c)
 	LIST(APPEND HDR test.h)
 else()
-	LIST(APPEND SRC xplane.c xplane_test.c)
-	LIST(APPEND HDR xplane.h xplane_test.h)
+	LIST(APPEND SRC xplane.c xplane_test.c ff_a320_intf.c)
+	LIST(APPEND HDR xplane.h xplane_test.h ff_a320_intf.h)
 endif()
 
 SET(ALL_SRC ${SRC} ${HDR})
@@ -60,13 +60,8 @@ if(UNIX)
 	include_directories(xtcas PUBLIC "../OpenAL/include")
 	if(NOT "${TEST_STANDALONE_BUILD}" EQUAL "1")
 		include_directories(xtcas PUBLIC "../SDK/CHeaders/XPLM"
-		    "../SDK/CHeaders/Widgets" "../SDK/CHeaders/Wrappers")
-	endif()
-else()
-	include_directories(xtcas PUBLIC "..\\OpenAL\\include")
-	if(NOT "${TEST_STANDALONE_BUILD}" EQUAL "1")
-		include_directories(xtcas PUBLIC "..\\SDK\\CHeaders\\XPLM"
-		    "..\\SDK\\CHeaders\\Widgets" "..\\SDK\\CHeaders\\Wrappers")
+		    "../SDK/CHeaders/Widgets" "../SDK/CHeaders/Wrappers"
+		    "../SDK")
 	endif()
 endif()
 
