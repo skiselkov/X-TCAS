@@ -47,6 +47,7 @@
 
 #define	FLOOP_INTVAL			0.1
 #define	POS_UPDATE_INTVAL		0.1
+#define	STARTUP_DELAY			5.0	/* seconds */
 #define	XTCAS_PLUGIN_NAME		"X-TCAS 1.0"
 #define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas.1.0"
 #define	XTCAS_PLUGIN_DESCRIPTION \
@@ -82,6 +83,7 @@ static geo_pos3_t my_acf_pos;
 static double my_acf_agl = 0;
 static double last_pos_collected = 0;
 static double cur_sim_time = 0;
+static double first_sim_time = 0;
 
 static char plugindir[512] = { 0 };
 
@@ -215,8 +217,8 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 		srch.acf_id = (void *)(uintptr_t)(i + 1);
 		pos = avl_find(&acf_pos_tree, &srch, &where);
 		/*
-		 * This is exceedingly unlikely, so it's "good enough" to use
-		 * as an emptiness test.
+		 * This is exceedingly unlikely, so it's "good enough"
+		 * to use as an emptiness test.
 		 */
 		if (IS_ZERO_VECT3(local)) {
 			if (pos != NULL) {
@@ -304,6 +306,12 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 	UNUSED(refcon);
 
 	cur_sim_time = dr_getf(&drs.time);
+
+	if (isnan(first_sim_time))
+		first_sim_time = cur_sim_time;
+
+	if (cur_sim_time - first_sim_time < STARTUP_DELAY)
+		return (-1.0);
 
 	if (!xtcas_inited) {
 		const sim_intf_output_ops_t *out_ops = ff_a320_intf_init();
@@ -463,6 +471,7 @@ XPluginEnable(void)
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector,
 	    xplm_Phase_Airplanes, 0, NULL);
+	first_sim_time = NAN;
 
 	return (1);
 }

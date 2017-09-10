@@ -541,8 +541,8 @@ update_contact(void *handle, void *acf_id, geo_pos3_t pos, vect3_t pos_3d,
 	ctc = avl_find(&contacts_tree, &srch, &where);
 	if (ctc == NULL) {
 		for (int i = 0; i < MAX_CONTACTS; i++) {
-			if (!&contacts_array[i].in_use &&
-			    !&contacts_array[i].deleted) {
+			if (!contacts_array[i].in_use &&
+			    !contacts_array[i].deleted) {
 				ctc = &contacts_array[i];
 				dbg_log(ff_a320, 2, "new contact, slot:%d", i);
 				break;

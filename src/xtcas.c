@@ -2080,7 +2080,7 @@ main_loop(void *ignored)
 		 */
 		if (last_t >= now_t || tcas_state.mode == TCAS_MODE_STBY) {
 			dbg_log(tcas, 3, "main_loop: time hasn't progressed "
-			    "or STBY mode set");
+			    "or STBY mode set (%d)", tcas_state.mode);
 			cv_timedwait(&worker_cv, &worker_lock,
 			    now + WORKER_LOOP_INTVAL_US);
 			continue;

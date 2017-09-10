@@ -20,5 +20,5 @@
 
 debug_config_t xtcas_dbg = {
 	.all = 0, .snd = 0, .wav = 0, .tcas = 0, .xplane = 0, .test = 0,
-	.ra = 0, .cpa = 0, .sl = 0, .contact = 0, .threat = 0, .ff_a320 = 10
+	.ra = 0, .cpa = 0, .sl = 0, .contact = 0, .threat = 0, .ff_a320 = 0
 };
