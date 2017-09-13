@@ -468,10 +468,14 @@ ff_a320_update(double step, void *tag)
 
 		if (ctc->in_use) {
 			/* Update contact info */
-			vect3_t rel_pos = vect3_rot(ctc->pos_3d, my_hdg, 1);
-			double rbrg = dir2hdg(VECT3_TO_VECT2(rel_pos));
-			double rdist = vect2_abs(VECT3_TO_VECT2(rel_pos));
-			double ralt = rel_pos.z - my_alt;
+			double rbrg = dir2hdg(VECT3_TO_VECT2(ctc->pos_3d)) -
+			    my_hdg;
+			double rdist = vect2_abs(VECT3_TO_VECT2(ctc->pos_3d));
+			double ralt = ctc->pos_3d.z - my_alt;
+
+			/* convert to the -180..+180 format for the A320 */
+			if (rbrg > 180)
+				rbrg -= 360;
 
 			dbg_log(ff_a320, 2, "ff_a320_update slot:%d acf_id:%p "
 			    "rbrg:%.1f rdist:%.0f ralt:%.0f vs:%.2f lvl:%d",
