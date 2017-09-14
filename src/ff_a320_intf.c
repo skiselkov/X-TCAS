@@ -102,7 +102,7 @@ static struct {
 	int		intr_trend;
 } ids;
 
-static void ff_a320_update(double step, void *tag);
+static void __stdcall ff_a320_update(double step, void *tag);
 static void update_contact(void *handle, void *acf_id, geo_pos3_t pos,
     vect3_t pos_3d, double trk, double vs, tcas_threat_t level);
 static void delete_contact(void *handle, void *acf_id);
@@ -381,7 +381,7 @@ ff_a320_ids_init(void)
 	ids.inited = B_TRUE;
 }
 
-static void
+static void __stdcall
 ff_a320_update(double step, void *tag)
 {
 	static int last_slot = 0;
