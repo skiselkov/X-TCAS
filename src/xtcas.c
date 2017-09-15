@@ -2137,6 +2137,19 @@ main_loop(void *ignored)
 		if (tcas_state.test_in_prog) {
 			if (isnan(tcas_state.test_start_time)) {
 				tcas_state.test_start_time = now_t;
+
+				if (out_ops != NULL) {
+					/*
+					 * During a system test, we give a
+					 * normal climb indication on the PFD.
+					 */
+					out_ops->update_RA(out_ops->handle,
+					    ADV_STATE_RA, RA_MSG_CLB,
+					    RA_TYPE_CORRECTIVE, RA_SENSE_UPWARD,
+					    B_FALSE, B_FALSE, 0, FPM2MPS(1500),
+					    FPM2MPS(2000), -INF_VS,
+					    FPM2MPS(1500), 0, 0);
+				}
 			} else if (now_t - tcas_state.test_start_time >
 			    TCAS_TEST_DUR) {
 				/* Remove the fake test contacts */
@@ -2145,6 +2158,10 @@ main_loop(void *ignored)
 						out_ops->delete_contact(
 						    out_ops->handle, (void *)i);
 					}
+					out_ops->update_RA(out_ops->handle,
+					    ADV_STATE_NONE, RA_MSG_CLEAR, -1,
+					    -1, B_FALSE, B_FALSE, 0, 0, 0, 0,
+					    0, 0, 0);
 				}
 				tcas_state.test_start_time = NAN;
 				tcas_state.test_in_prog = B_FALSE;
@@ -2189,7 +2206,7 @@ main_loop(void *ignored)
 		 * the appropriate threat levels assigned, so we don't need
 		 * to do any more resolution.
 		 */
-		if (!tcas_state.test_in_prog) {
+		if (!test) {
 			resolve_CPAs(&my_acf, &other_acf, &cpas, sl,
 			    &RA_hints, now);
 		}
