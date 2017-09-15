@@ -751,9 +751,11 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
  * aircraft) to create a thread-local copy. `my_acf_copy' will be populated
  * with our aircraft's position info, while `other_acf_copy' will be
  * populated with the state of all other aircraft. Neither may be NULL.
+ * If `test' is set, the intruder contact tree is populated with TCAS test
+ * contacts instead of the real contacts.
  */
 static void
-copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
+copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy, bool_t test)
 {
 	ASSERT(my_acf_copy != NULL);
 	ASSERT(other_acf_copy != NULL);
@@ -765,49 +767,28 @@ copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
 
 	memcpy(my_acf_copy, &my_acf_glob, sizeof (*my_acf_copy));
 
-	for (tcas_acf_t *acf = avl_first(&other_acf_glob); acf != NULL;
-	    acf = AVL_NEXT(&other_acf_glob, acf)) {
-		tcas_acf_t *acf_copy = calloc(1, sizeof (*acf));
-		memcpy(acf_copy, acf, sizeof (*acf));
-		avl_add(other_acf_copy, acf_copy);
-	}
-
-	mutex_exit(&acf_lock);
-}
-
-/*
- * This is similar to copy_acf_state, but instead of copying real intruder
- * positions, we instead generate fake ones and assign them a threat level
- * immediately. This is used to display the TCAS test pattern output.
- */
-static void
-copy_acf_state_test(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
-{
-	ASSERT(my_acf_copy != NULL);
-	ASSERT(other_acf_copy != NULL);
-	ASSERT(tcas_state.test_in_prog);
-
-	avl_create(other_acf_copy, acf_compar, sizeof (tcas_acf_t),
-	    offsetof(tcas_acf_t, node));
-
-	mutex_enter(&acf_lock);
-
-	memcpy(my_acf_copy, &my_acf_glob, sizeof (*my_acf_copy));
-
-	/*
-	 * The TCAS test pattern consists of 4 contacts arranged as
-	 * follows:
-	 * contact 1: 2NM left and 3NM ahead of our aircraft, 1000 ft
-	 *	above, neither climbing nor descending. Classified as
-	 *	other traffic (empty diamond).
-	 * contact 2: 2NM right and 3NM ahead of our aircraft, 1000 ft
-	 *	below, descending. Classificied as proximate traffic
-	 *	(filled diamond).
-	 * contact 3: 2NM left, 200 ft below, climbing, classified as
-	 *	a TRAFFIC threat (solid yellow circle).
-	 * contact 4: 2NM right, 200 ft above, not climbing or descending,
-	 *	classified as an RA threat (solid red square).
-	 */
+	if (!test) {
+		for (tcas_acf_t *acf = avl_first(&other_acf_glob); acf != NULL;
+		    acf = AVL_NEXT(&other_acf_glob, acf)) {
+			tcas_acf_t *acf_copy = calloc(1, sizeof (*acf));
+			memcpy(acf_copy, acf, sizeof (*acf));
+			avl_add(other_acf_copy, acf_copy);
+		}
+	} else {
+		/*
+		 * The TCAS test pattern consists of 4 contacts arranged as
+		 * follows:
+		 * contact 1: 2NM left and 3NM ahead of our aircraft, 1000 ft
+		 *	above, neither climbing nor descending. Classified as
+		 *	other traffic (empty diamond).
+		 * contact 2: 2NM right and 3NM ahead of our aircraft, 1000 ft
+		 *	below, descending. Classificied as proximate traffic
+		 *	(filled diamond).
+		 * contact 3: 2NM left, 200 ft below, climbing, classified as
+		 *	a TRAFFIC threat (solid yellow circle).
+		 * contact 4: 2NM right, 200 ft above, flying level,
+		 *	classified as an RA threat (solid red square).
+		 */
 
 #define	ADD_TEST_CONTACT(id, x_nm, y_nm, rel_alt_ft, trend, threat_lvl) \
 	do { \
@@ -825,12 +806,13 @@ copy_acf_state_test(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
 		avl_add(other_acf_copy, acf); \
 	} while (0)
 
-	ADD_TEST_CONTACT(1, -2, 3, 1000, 0, OTH_THREAT);
-	ADD_TEST_CONTACT(2, 2, 3, 1000, -1000, PROX_THREAT);
-	ADD_TEST_CONTACT(3, -2, 0, -200, 1000, TA_THREAT);
-	ADD_TEST_CONTACT(4, 2, 0, 200, 0, RA_THREAT_CORR);
+		ADD_TEST_CONTACT(1, -2, 3, 1000, 0, OTH_THREAT);
+		ADD_TEST_CONTACT(2, 2, 3, 1000, -1000, PROX_THREAT);
+		ADD_TEST_CONTACT(3, -2, 0, -200, 1000, TA_THREAT);
+		ADD_TEST_CONTACT(4, 2, 0, 200, 0, RA_THREAT_CORR);
 
 #undef	ADD_TEST_CONTACT
+	}
 
 	mutex_exit(&acf_lock);
 }
@@ -2087,10 +2069,10 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 }
 
 static void
-update_contacts(avl_tree_t *other_acf)
+update_contacts(avl_tree_t *other_acf, bool_t test)
 {
 	if (tcas_state.filter == TCAS_FILTER_THRT &&
-	    tcas_state.adv_state == ADV_STATE_NONE) {
+	    tcas_state.adv_state == ADV_STATE_NONE && !test) {
 		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 		    acf = AVL_NEXT(other_acf, acf)) {
 			if (out_ops != NULL) {
@@ -2137,6 +2119,7 @@ main_loop(void *ignored)
 		tcas_acf_t my_acf;
 		avl_tree_t other_acf, cpas;
 		double now_t = in_ops->get_time(in_ops->handle);
+		bool_t test;
 
 		dbg_log(tcas, 4, "main_loop: start (%.1f)", now_t);
 
@@ -2168,16 +2151,17 @@ main_loop(void *ignored)
 				xtcas_play_msg(TCAS_TEST_PASS);
 			}
 		}
+		test = tcas_state.test_in_prog;
+
+		mutex_exit(&tcas_state.test_lock);
+
 		last_t = now_t;
 
 		/*
 		 * We'll create a local copy of all aircraft positions so
 		 * we don't have to hold acf_lock throughout.
 		 */
-		if (!tcas_state.test_in_prog)
-			copy_acf_state(&my_acf, &other_acf);
-		else
-			copy_acf_state_test(&my_acf, &other_acf);
+		copy_acf_state(&my_acf, &other_acf, test);
 
 		/*
 		 * Based on our altitudes, determine the sensitivity level.
@@ -2214,7 +2198,7 @@ main_loop(void *ignored)
 		 * Update the avionics on the threat status of all the
 		 * contacts that we have.
 		 */
-		update_contacts(&other_acf);
+		update_contacts(&other_acf, test);
 
 		destroy_CPAs(&cpas);
 
@@ -2224,8 +2208,6 @@ main_loop(void *ignored)
 		destroy_acf_state(&other_acf);
 
 		dbg_log(tcas, 5, "main_loop: end");
-
-		mutex_exit(&tcas_state.test_lock);
 
 		/*
 		 * Jump forward at fixed intervals to guarantee our
