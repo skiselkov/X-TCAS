@@ -52,7 +52,9 @@ static msg_info_t voice_msgs[RA_NUM_MSGS] = {
 	{ .file = "maint_vs.wav",	.wav = NULL },
 	{ .file = "maint_vs_cross.wav",	.wav = NULL },
 	{ .file = "level_off.wav",	.wav = NULL },
-	{ .file = "tfc.wav",		.wav = NULL }
+	{ .file = "tfc.wav",		.wav = NULL },
+	{ .file = "tcas_test_pass.wav",	.wav = NULL },
+	{ .file = "tcas_test_fail.wav",	.wav = NULL }
 };
 
 static bool_t		inited = B_FALSE;

@@ -42,7 +42,7 @@
 
 typedef struct {
 	void		*acf_id;
-	geo_pos3_t	pos;
+	vect3_t		pos_3d;
 	double		trk;
 	double		vs;
 	tcas_threat_t	level;
@@ -56,7 +56,7 @@ static XPLMWindowID win = NULL;
 static mutex_t contacts_lock;
 static avl_tree_t contacts;
 
-static dr_t lat, lon, hdg;
+static dr_t hdg_dr;
 
 static int
 dummy_func(void)
@@ -67,7 +67,7 @@ dummy_func(void)
 static void
 draw(XPLMWindowID window, void *refcon)
 {
-	fpp_t fpp;
+	double hdg = dr_getf(&hdg_dr);
 
 	UNUSED(window);
 	UNUSED(refcon);
@@ -82,7 +82,12 @@ draw(XPLMWindowID window, void *refcon)
 	glVertex2f(DEBUG_INTF_SZ, 0);
 	glEnd();
 
-	if (xtcas_get_mode() == TCAS_MODE_STBY) {
+	/*
+	 * Standby if mode is STBY and we have no contacts (TCAS test
+	 * not in progress).
+	 */
+	if (xtcas_get_mode() == TCAS_MODE_STBY &&
+	    avl_numnodes(&contacts) == 0) {
 		glColor3f(1, 1, 1);
 		glBegin(GL_LINES);
 		glVertex2f(0, 0);
@@ -92,9 +97,6 @@ draw(XPLMWindowID window, void *refcon)
 		glEnd();
 		return;
 	}
-
-	fpp = stereo_fpp_init(GEO_POS2(dr_getf(&lat), dr_getf(&lon)),
-	    dr_getf(&hdg), &wgs84, B_FALSE);
 
 	glColor3f(1, 1, 1);
 	glBegin(GL_LINES);
@@ -107,7 +109,7 @@ draw(XPLMWindowID window, void *refcon)
 	mutex_enter(&contacts_lock);
 	for (contact_t *ctc = avl_first(&contacts); ctc != NULL;
 	    ctc = AVL_NEXT(&contacts, ctc)) {
-		vect2_t v = geo2fpp(GEO3_TO_GEO2(ctc->pos), &fpp);
+		vect2_t v = vect2_rot(VECT3_TO_VECT2(ctc->pos_3d), -hdg);
 		v.x = (v.x / DEBUG_INTF_SCALE) + (DEBUG_INTF_SZ / 2);
 		v.y = (v.y / DEBUG_INTF_SCALE) + (DEBUG_INTF_SZ / 2);
 		if (v.x < DEBUG_INTF_MARGIN || v.y < DEBUG_INTF_MARGIN ||
@@ -200,9 +202,7 @@ xplane_test_init(void)
 	if (inited)
 		return;
 
-	fdr_find(&lat, "sim/flightmodel/position/latitude");
-	fdr_find(&lon, "sim/flightmodel/position/longitude");
-	fdr_find(&hdg, "sim/flightmodel/position/psi");
+	fdr_find(&hdg_dr, "sim/flightmodel/position/true_psi");
 
 	XPLMGetScreenSize(&w, &h);
 	win = XPLMCreateWindow(0, h - DEBUG_INTF_SZ, w - DEBUG_INTF_SZ, 0, 1,
@@ -237,14 +237,13 @@ xplane_test_fini(void)
 }
 
 void
-xplane_test_update_contact(void *handle, void *acf_id, geo_pos3_t pos,
-    vect3_t pos_3d, double trk, double vs, tcas_threat_t level)
+xplane_test_update_contact(void *handle, void *acf_id, vect3_t pos_3d,
+    double trk, double vs, tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
 
 	UNUSED(handle);
-	UNUSED(pos_3d);
 
 	if (!inited)
 		return;
@@ -259,7 +258,7 @@ xplane_test_update_contact(void *handle, void *acf_id, geo_pos3_t pos,
 		avl_insert(&contacts, ctc, where);
 	}
 
-	ctc->pos = pos;
+	ctc->pos_3d = pos_3d;
 	ctc->trk = trk;
 	ctc->vs = vs;
 	ctc->level = level;

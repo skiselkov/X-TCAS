@@ -103,8 +103,8 @@ static struct {
 } ids;
 
 static void __stdcall ff_a320_update(double step, void *tag);
-static void update_contact(void *handle, void *acf_id, geo_pos3_t pos,
-    vect3_t pos_3d, double trk, double vs, tcas_threat_t level);
+static void update_contact(void *handle, void *acf_id, vect3_t pos_3d,
+    double trk, double vs, tcas_threat_t level);
 static void delete_contact(void *handle, void *acf_id);
 static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
@@ -526,13 +526,12 @@ ff_a320_update(double step, void *tag)
 }
 
 static void
-update_contact(void *handle, void *acf_id, geo_pos3_t pos, vect3_t pos_3d,
-    double trk, double vs, tcas_threat_t level)
+update_contact(void *handle, void *acf_id, vect3_t pos_3d, double trk,
+    double vs, tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
 
-	UNUSED(pos);
 	UNUSED(handle);
 	UNUSED(trk);
 

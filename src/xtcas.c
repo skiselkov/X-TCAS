@@ -65,6 +65,8 @@
 #define	INF_VS				FPM2MPS(100000)
 #define	APCH_SPD_THRESH			KT2MPS(40)
 
+#define	TCAS_TEST_DUR			10	/* seconds */
+
 #define	PRINTF_ACF_FMT "rdy:%d  alt_rptg:%d  pos:%3.04f/%2.4f/%4.1f  " \
 	"agl:%.0f  gs:%.1f  trk:%.0f  trk_v:%.2fx%.2f  vvel:%.1f  ongnd:%d"
 #define	PRINTF_ACF_ARGS(acf) \
@@ -95,6 +97,7 @@ typedef struct tcas_acf {
 	bool_t	alt_rptg;	/* target altitude is available */
 	double	agl;		/* altitude above ground level in meters */
 	double	gs;		/* true groundspeed (horizontal) in m/s */
+	double	hdg;		/* true heading in degrees */
 	double	trk;		/* true track in degrees */
 	vect2_t	trk_v;		/* true track as speed vector at gs */
 	double	vvel;		/* computed vertical velocity in m/s */
@@ -163,6 +166,10 @@ typedef struct {
 	uint64_t	change_t;	/* microclock() timestamp */
 	tcas_mode_t	mode;
 	tcas_filter_t	filter;
+
+	mutex_t		test_lock;
+	bool_t		test_in_prog;
+	double		test_start_time;
 } tcas_state_t;
 
 struct cpa {
@@ -614,7 +621,7 @@ static void
 update_my_position(double t)
 {
 	in_ops->get_my_acf_pos(in_ops->handle, &my_acf_glob.cur_pos,
-	    &my_acf_glob.agl);
+	    &my_acf_glob.agl, &my_acf_glob.hdg);
 	my_acf_glob.cur_pos_3d = VECT3(0, 0, my_acf_glob.cur_pos.elev);
 	xtcas_obj_pos_update(&my_acf_glob.pos_upd, t, my_acf_glob.cur_pos,
 	    my_acf_glob.agl);
@@ -764,6 +771,66 @@ copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
 		memcpy(acf_copy, acf, sizeof (*acf));
 		avl_add(other_acf_copy, acf_copy);
 	}
+
+	mutex_exit(&acf_lock);
+}
+
+/*
+ * This is similar to copy_acf_state, but instead of copying real intruder
+ * positions, we instead generate fake ones and assign them a threat level
+ * immediately. This is used to display the TCAS test pattern output.
+ */
+static void
+copy_acf_state_test(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy)
+{
+	ASSERT(my_acf_copy != NULL);
+	ASSERT(other_acf_copy != NULL);
+	ASSERT(tcas_state.test_in_prog);
+
+	avl_create(other_acf_copy, acf_compar, sizeof (tcas_acf_t),
+	    offsetof(tcas_acf_t, node));
+
+	mutex_enter(&acf_lock);
+
+	memcpy(my_acf_copy, &my_acf_glob, sizeof (*my_acf_copy));
+
+	/*
+	 * The TCAS test pattern consists of 4 contacts arranged as
+	 * follows:
+	 * contact 1: 2NM left and 3NM ahead of our aircraft, 1000 ft
+	 *	above, neither climbing nor descending. Classified as
+	 *	other traffic (empty diamond).
+	 * contact 2: 2NM right and 3NM ahead of our aircraft, 1000 ft
+	 *	below, descending. Classificied as proximate traffic
+	 *	(filled diamond).
+	 * contact 3: 2NM left, 200 ft below, climbing, classified as
+	 *	a TRAFFIC threat (solid yellow circle).
+	 * contact 4: 2NM right, 200 ft above, not climbing or descending,
+	 *	classified as an RA threat (solid red square).
+	 */
+
+#define	ADD_TEST_CONTACT(id, x_nm, y_nm, rel_alt_ft, trend, threat_lvl) \
+	do { \
+		tcas_acf_t *acf = calloc(1, sizeof (*acf)); \
+		vect2_t v = vect2_rot(VECT2(NM2MET(x_nm), NM2MET(y_nm)), \
+		    my_acf_copy->hdg); \
+		acf->acf_id = (void *)id; \
+		acf->cur_pos_3d = VECT3(v.x, v.y, \
+		    my_acf_copy->cur_pos.elev + FEET2MET(rel_alt_ft)); \
+		acf->alt_rptg = B_TRUE; \
+		acf->vvel = trend; \
+		acf->trend_data_ready = B_TRUE; \
+		acf->up_to_date = B_TRUE; \
+		acf->threat = threat_lvl; \
+		avl_add(other_acf_copy, acf); \
+	} while (0)
+
+	ADD_TEST_CONTACT(1, -2, 3, 1000, 0, OTH_THREAT);
+	ADD_TEST_CONTACT(2, 2, 3, 1000, -1000, PROX_THREAT);
+	ADD_TEST_CONTACT(3, -2, 0, -200, 1000, TA_THREAT);
+	ADD_TEST_CONTACT(4, 2, 0, 200, 0, RA_THREAT_CORR);
+
+#undef	ADD_TEST_CONTACT
 
 	mutex_exit(&acf_lock);
 }
@@ -2037,9 +2104,8 @@ update_contacts(avl_tree_t *other_acf)
 			if (!acf->on_ground) {
 				if (out_ops != NULL) {
 					out_ops->update_contact(out_ops->handle,
-					    acf->acf_id, acf->cur_pos,
-					    acf->cur_pos_3d, acf->trk,
-					    acf->vvel, acf->threat);
+					    acf->acf_id, acf->cur_pos_3d,
+					    acf->trk, acf->vvel, acf->threat);
 				}
 			} else {
 				if (out_ops != NULL) {
@@ -2074,16 +2140,33 @@ main_loop(void *ignored)
 
 		dbg_log(tcas, 4, "main_loop: start (%.1f)", now_t);
 
-		/*
-		 * If sim time hasn't advanced, we're paused. Alternatively,
-		 * we might be in STBY mode.
-		 */
-		if (last_t >= now_t || tcas_state.mode == TCAS_MODE_STBY) {
+		/* If sim time hasn't advanced, we're paused. */
+		if (last_t >= now_t) {
 			dbg_log(tcas, 3, "main_loop: time hasn't progressed "
 			    "or STBY mode set (%d)", tcas_state.mode);
 			cv_timedwait(&worker_cv, &worker_lock,
 			    now + WORKER_LOOP_INTVAL_US);
 			continue;
+		}
+
+		mutex_enter(&tcas_state.test_lock);
+
+		if (tcas_state.test_in_prog) {
+			if (isnan(tcas_state.test_start_time)) {
+				tcas_state.test_start_time = now_t;
+			} else if (now_t - tcas_state.test_start_time >
+			    TCAS_TEST_DUR) {
+				/* Remove the fake test contacts */
+				if (out_ops != NULL) {
+					for (uintptr_t i = 1; i <= 4; i++) {
+						out_ops->delete_contact(
+						    out_ops->handle, (void *)i);
+					}
+				}
+				tcas_state.test_start_time = NAN;
+				tcas_state.test_in_prog = B_FALSE;
+				xtcas_play_msg(TCAS_TEST_PASS);
+			}
 		}
 		last_t = now_t;
 
@@ -2091,7 +2174,10 @@ main_loop(void *ignored)
 		 * We'll create a local copy of all aircraft positions so
 		 * we don't have to hold acf_lock throughout.
 		 */
-		copy_acf_state(&my_acf, &other_acf);
+		if (!tcas_state.test_in_prog)
+			copy_acf_state(&my_acf, &other_acf);
+		else
+			copy_acf_state_test(&my_acf, &other_acf);
 
 		/*
 		 * Based on our altitudes, determine the sensitivity level.
@@ -2115,8 +2201,14 @@ main_loop(void *ignored)
 		 * Enter the resolution phase and check if we need to do
 		 * anything. This is the main function where we issue TAs
 		 * and RAs.
+		 * In the test case, the contacts are already generated with
+		 * the appropriate threat levels assigned, so we don't need
+		 * to do any more resolution.
 		 */
-		resolve_CPAs(&my_acf, &other_acf, &cpas, sl, &RA_hints, now);
+		if (!tcas_state.test_in_prog) {
+			resolve_CPAs(&my_acf, &other_acf, &cpas, sl,
+			    &RA_hints, now);
+		}
 
 		/*
 		 * Update the avionics on the threat status of all the
@@ -2132,6 +2224,8 @@ main_loop(void *ignored)
 		destroy_acf_state(&other_acf);
 
 		dbg_log(tcas, 5, "main_loop: end");
+
+		mutex_exit(&tcas_state.test_lock);
 
 		/*
 		 * Jump forward at fixed intervals to guarantee our
@@ -2198,6 +2292,8 @@ xtcas_init(const sim_intf_input_ops_t *intf_input_ops,
 
 	memset(&tcas_state, 0, sizeof (tcas_state));
 	tcas_state.initial_ra_vs = NAN;
+	mutex_init(&tcas_state.test_lock);
+	tcas_state.test_start_time = NAN;
 
 	in_ops = intf_input_ops;
 	out_ops = intf_output_ops;
@@ -2222,6 +2318,7 @@ xtcas_fini(void)
 
 	destroy_acf_state(&other_acf_glob);
 
+	mutex_destroy(&tcas_state.test_lock);
 	mutex_destroy(&acf_lock);
 
 	cv_destroy(&worker_cv);
@@ -2254,4 +2351,18 @@ tcas_filter_t
 xtcas_get_filter(void)
 {
 	return (tcas_state.filter);
+}
+
+void
+xtcas_test(void)
+{
+	if (tcas_state.mode != TCAS_MODE_STBY) {
+		logMsg("Cannot perform TCAS test: TCAS mode not STBY");
+		xtcas_play_msg(TCAS_TEST_FAIL);
+		return;
+	}
+
+	mutex_enter(&tcas_state.test_lock);
+	tcas_state.test_in_prog = B_TRUE;
+	mutex_exit(&tcas_state.test_lock);
 }

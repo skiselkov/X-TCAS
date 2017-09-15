@@ -122,6 +122,8 @@ typedef enum {
 	RA_MSG_MAINT_VS_CROSS,	/* 1x MAINTAIN VERT. SPEED, CROSSING MAINTAIN */
 	RA_MSG_LEVEL_OFF,	/* 2x LEVEL OFF */
 	RA_MSG_TFC,		/* 2x TRAFFIC */
+	TCAS_TEST_PASS,
+	TCAS_TEST_FAIL,
 	RA_NUM_MSGS		/* invalid */
 } tcas_msg_t;
 
@@ -179,14 +181,14 @@ typedef struct {
 	double	(*get_time)(void *handle);
 	/*
 	 * This function returns the current position of our own aircraft.
-	 * The arguments must be filled with the current LAT/LON/ELEV and
-	 * altitude AGL of our own aircraft. LAT & LON should be in degrees
+	 * The arguments must be filled with the current LAT/LON/ELEV, altitude
+	 * AGL and heading of our own aircraft. LAT & LON should be in degrees
 	 * from the 0'th parallel and 0'th meridian (north/east increasing).
 	 * ELEV should be our current barometric altitude. All altitudes
-	 * are in meters.
+	 * are in meters. Heading is degrees from true north.
 	 */
 	void	(*get_my_acf_pos)(void *handle, geo_pos3_t *pos,
-		    double *alt_agl);
+		    double *alt_agl, double *hdg);
 	/*
 	 * This function serves to feed TCAS aircraft contacts into X-TCAS.
 	 * The callee must malloc() an array of acf_pos_t structures and
@@ -223,20 +225,19 @@ typedef struct {
 	 * 2) acf_id A unique opaque aircraft ID as was returned by
 	 *	get_oth_acf_pos. This is the identifier by which X-TCAS
 	 *	discriminates between contacts.
-	 * 3) pos The current LAT/LON/ELEV of this contact.
-	 * 4) pos_3d Relative position in a north-up oriented Euclidian space,
+	 * 3) pos_3d Relative position in a north-up oriented Euclidian space,
 	 *	axes having the following meanings (all units in meters):
 	 *	X: west-to-east axis, west negative, east positive
 	 *	Y: south-to-north axis, south negative, north positive
 	 *	Z: absolute height above mean sea level
-	 * 5) trk The current true track (in degrees) of this contact.
-	 * 6) vs The current vertical speed (in m/s) of this contact.
-	 * 7) level The current TCAS threat level of this aircraft.
+	 * 4) trk The current true track (in degrees) of this contact.
+	 * 5) vs The current vertical speed (in m/s) of this contact.
+	 * 6) level The current TCAS threat level of this aircraft.
 	 *	This can be used to determine with which symbol the contact
 	 *	should be displayed (see tcas_threat_t).
 	 */
-	void	(*update_contact)(void *handle, void *acf_id, geo_pos3_t pos,
-		    vect3_t pos_3d, double trk, double vs, tcas_threat_t level);
+	void	(*update_contact)(void *handle, void *acf_id, vect3_t pos_3d,
+	    double trk, double vs, tcas_threat_t level);
 	/*
 	 * Deletes a contact that was previously acquired via get_oth_acf_pos.
 	 * Please note that X-TCAS may send a delete_contact before ever
@@ -315,6 +316,8 @@ void xtcas_set_mode(tcas_mode_t mode);
 tcas_mode_t xtcas_get_mode(void);
 void xtcas_set_filter(tcas_filter_t filter);
 tcas_filter_t xtcas_get_filter(void);
+
+void xtcas_test(void);
 
 #ifdef __cplusplus
 }
