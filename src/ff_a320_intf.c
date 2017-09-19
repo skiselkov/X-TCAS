@@ -437,8 +437,11 @@ ff_a320_update(double step, void *tag)
 		xtcas_set_suppressed(suppress);
 	}
 
+	if (mode == TCAS_MODE_TARA && xtcas_get_SL() <= 2)
+		mode = TCAS_MODE_TAONLY;
+
 	/* System-wide state output */
-	sets32(ids.sys_state, xtcas_get_mode());
+	sets32(ids.sys_state, mode);
 	sets32(ids.adv_type, tcas.adv);
 	setf32(ids.green_band_top, tcas.max_green);
 	setf32(ids.green_band_bottom, tcas.min_green);

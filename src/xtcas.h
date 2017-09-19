@@ -316,6 +316,7 @@ void xtcas_set_mode(tcas_mode_t mode);
 tcas_mode_t xtcas_get_mode(void);
 void xtcas_set_filter(tcas_filter_t filter);
 tcas_filter_t xtcas_get_filter(void);
+int xtcas_get_SL(void);
 
 void xtcas_test(void);
 

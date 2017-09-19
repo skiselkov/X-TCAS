@@ -475,6 +475,7 @@ static avl_tree_t other_acf_glob;
 static double last_collect_t = 0;
 static tcas_state_t tcas_state;
 static bool_t inited = B_FALSE;
+static int xtcas_SL = 0;
 
 static condvar_t worker_cv;
 static thread_t worker_thr;
@@ -2190,6 +2191,7 @@ main_loop(void *ignored)
 			    my_acf.cur_pos.elev, my_acf.agl,
 			    tcas_state.mode == TCAS_MODE_TAONLY ? 2 : 0);
 			dbg_log(sl, 1, "SL: %d", sl->SL_id);
+			xtcas_SL = sl->SL_id;
 		}
 
 		/*
@@ -2350,6 +2352,12 @@ tcas_filter_t
 xtcas_get_filter(void)
 {
 	return (tcas_state.filter);
+}
+
+int
+xtcas_get_SL(void)
+{
+	return (xtcas_SL);
 }
 
 void
