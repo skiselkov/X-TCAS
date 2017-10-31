@@ -237,28 +237,6 @@ setf32(int id, float val)
 	svi.ValueSet(id, &val);
 }
 
-static inline double
-getf64(int id)
-{
-	double val;
-	unsigned int type = svi.ValueType(id);
-	ASSERT_MSG(type == Value_Type_float64,
-	    "%s isn't a float64 type, instead it is %s",
-	    svi.ValueName(id), type2str(type));
-	svi.ValueGet(id, &val);
-	return (val);
-}
-
-static inline void
-setf64(int id, double val)
-{
-	unsigned int type = svi.ValueType(id);
-	ASSERT_MSG(type == Value_Type_float64,
-	    "%s isn't a float64 type, instead it is %s",
-	    svi.ValueName(id), type2str(type));
-	svi.ValueSet(id, &val);
-}
-
 static const char *
 type2str(unsigned int t)
 {

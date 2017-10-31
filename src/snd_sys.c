@@ -186,7 +186,8 @@ xtcas_is_suppressed(void)
 bool_t
 xtcas_msg_is_playing(void)
 {
-	return (playing_msg != -1u && msg_started_t + msg_dur > microclock());
+	return (playing_msg != (tcas_msg_t)-1u &&
+	    msg_started_t + msg_dur > microclock());
 }
 
 /*

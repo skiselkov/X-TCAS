@@ -700,6 +700,13 @@ draw_gui(WINDOW *win)
 	refresh();
 }
 
+static void
+lib_log_func(const char *str)
+{
+	printf("%s", str);
+	fflush(stdout);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -714,7 +721,7 @@ main(int argc, char **argv)
 	WINDOW *win;
 	bool_t gfx = B_TRUE;
 
-	log_init((logfunc_t)puts, "xtcas");
+	log_init(lib_log_func, "xtcas");
 
 	list_create(&other_acf, sizeof (acf_t), offsetof(acf_t, node));
 

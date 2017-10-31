@@ -96,8 +96,6 @@ if(APPLE)
 	FIND_LIBRARY(OPUS_LIBRARY opus)
 	FIND_LIBRARY(OGG_LIBRARY ogg)
 	target_link_libraries(xtcas
-	    ${XPLM_LIBRARY}
-	    ${XPWIDGETS_LIBRARY}
 	    ${LIBACFUTILS_LIBRARY}
 	    ${OPUSFILE_LIBRARY}
 	    ${OPUS_LIBRARY}
@@ -105,6 +103,9 @@ if(APPLE)
 	    ${OPENAL_LIBRARY})
 	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
 		target_link_libraries(xtcas ${CURSES_LIBRARY})
+	else()
+		target_link_libraries(xtcas ${XPLM_LIBRARY}
+		    ${XPWIDGETS_LIBRARY})
 	endif()
 else()
 	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}

@@ -120,10 +120,12 @@ macx {
 }
 
 macx-clang {
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-64 --libs")
 	LIBS += -L$$[LIBACFUTILS]/qmake/mac64 -lacfutils
 }
 
 macx-clang-32 {
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-32 --libs")
 	LIBS += -L$$[LIBACFUTILS]/qmake/mac32 -lacfutils
 }
 
