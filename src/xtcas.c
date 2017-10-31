@@ -65,6 +65,14 @@
 #define	INF_VS				FPM2MPS(100000)
 #define	APCH_SPD_THRESH			KT2MPS(40)
 
+/*
+ * When checking if an RA hint is still active, we boost the TA horizontal
+ * and vertical volume by this factor. This helps us to avoid issuing a
+ * CLEAR OF CONFLICT too early, when returning to the original path could
+ * trigger a second RA.
+ */
+#define	HINT_INCR_FACT			1.2
+
 #define	TCAS_TEST_DUR			10	/* seconds */
 
 #define	PRINTF_ACF_FMT "rdy:%d  alt_rptg:%d  pos:%3.04f/%2.4f/%4.1f  " \
@@ -337,7 +345,7 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 	    .red_hi = {FPM2MPS(4400), INF_VS}
 	}
     },
-    {	/* MAINTAIN VERTICAL SPEED, CROSSING MAINTAIN */
+    {	/* MAINTAIN VERTICAL SPEED,CROSSING MAINTAIN */
 	.msg = RA_MSG_MAINT_VS_CROSS, .rev_msg = -1,
 	.initial = B_TRUE, .subseq = B_FALSE, .sense = RA_SENSE_UPWARD,
 	.type = RA_TYPE_CORRECTIVE, .cross = RA_CROSS_REQ,
@@ -1105,6 +1113,7 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		 * might still derive an RA threat level from a previous hint.
 		 * However, only do so if:
 		 * 1) The current position violates the TA-protected volume
+		 *    boosted by 20% in both vertical & horizontal extent
 		 *    (to avoid issuing a TA against an RA threat).
 		 * 2) The target is reporting altitude (if they stop
 		 *    reporting, we need to drop the RA).
@@ -1112,8 +1121,10 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		 */
 		if (hint != NULL && r_vel < APCH_SPD_THRESH &&
 		    oacf->alt_rptg &&
-		    (cpa->d_h <= sl->dmod_TA || d_h <= sl->dmod_TA) &&
-		    (cpa->d_v <= sl->zthr_TA || d_v <= sl->zthr_TA)) {
+		    (cpa->d_h <= sl->dmod_TA * HINT_INCR_FACT ||
+		    d_h <= sl->dmod_TA * HINT_INCR_FACT) &&
+		    (cpa->d_v <= sl->zthr_TA * HINT_INCR_FACT ||
+		    d_v <= sl->zthr_TA * HINT_INCR_FACT)) {
 			/* Hints cannot exist on initial RAs */
 			ASSERT3U(tcas_state.adv_state, ==, ADV_STATE_RA);
 			dbg_log(threat, 1, "bogie %p RA_HINT(%d,%d) "
@@ -1121,7 +1132,8 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 			    "d_h: %.0f|%.0f <= %.0f && d_v: %.0f|%.0f <= %.0f",
 			    oacf->acf_id, hint->level, hint->slow_closure,
 			    cpa->d_t, r_vel, oacf->alt_rptg, cpa->d_h, d_h,
-			    sl->dmod_TA, cpa->d_v, d_v, sl->zthr_TA);
+			    sl->dmod_TA * HINT_INCR_FACT, cpa->d_v, d_v,
+			    sl->zthr_TA * HINT_INCR_FACT);
 			ASSERT3U(hint->level, >=, RA_THREAT_PREV);
 			oacf->threat = hint->level;
 			oacf->slow_closure = hint->slow_closure;
@@ -1508,15 +1520,23 @@ ra_construct(const tcas_acf_t *my_acf, const tcas_RA_info_t *ri,
 		ra->min_sep = MIN(sep, ra->min_sep);
 		/*
 		 * An encounter is crossing if either:
-		 * 1) the RA sense is upward and at CPA our elev would
-		 *    have been below the intruder (+ some margin), OR
-		 * 2) the RA sense is downward and at CPA our elev
-		 *    would have been above the intruder
+		 * 1)
+		 *	a: the RA sense is upward
+		 *	b: currently we are below the intruder
+		 *	c: at CPA our elev will be above the intruder
+		 * 2)
+		 *	a: the RA sense is downward
+		 *	b: currently we are above the intruder
+		 *	c: at CPA our elev will be below the intruder
 		 */
 		ra->crossing |= ((ri->sense == RA_SENSE_UPWARD &&
-		    cpa->pos_b.z - cpa->pos_a.z > EQ_ALT_THRESH) ||
+		    cpa->acf_b->cur_pos_3d.z - cpa->acf_a->cur_pos_3d.z >
+		    EQ_ALT_THRESH &&
+		    cpa->pos_a.z - cpa->pos_b.z > EQ_ALT_THRESH) ||
 		    (ri->sense == RA_SENSE_DOWNWARD &&
-		    cpa->pos_a.z - cpa->pos_b.z > EQ_ALT_THRESH));
+		    cpa->acf_a->cur_pos_3d.z - cpa->acf_b->cur_pos_3d.z >
+		    EQ_ALT_THRESH &&
+		    cpa->pos_b.z - cpa->pos_a.z > EQ_ALT_THRESH));
 	}
 	ASSERT(isfinite(ra->min_sep));
 	ra->alim_achieved = (ra->min_sep >= sl->alim_RA);
@@ -1828,10 +1848,22 @@ CAS_logic(const tcas_acf_t *my_acf, const tcas_RA_t *prev_ra, avl_tree_t *cpas,
 	if (!initial && last_cpa->d_t < SUBSEQ_RA_DELAY)
 		return (NULL);
 
-	if (!slow_closure)
+	if (!slow_closure) {
 		CAS_logic_normal(my_acf, prev_ra, cpas, sl, prev_only, &prio);
-	else
+		/*
+		 * We are not guaranteed to find a suitable preventive RA if
+		 * the preventive RA has vertical speed ranges that might cause
+		 * us to dip into the alim threshold. In those cases, try to
+		 * look for a corrective RA instead.
+		 */
+		if (prev_only && avl_numnodes(&prio) == 0) {
+			avl_destroy(&prio);
+			CAS_logic_normal(my_acf, prev_ra, cpas, sl, B_FALSE,
+			    &prio);
+		}
+	} else {
 		CAS_logic_slow(my_acf, prev_ra, cpas, sl, &prio);
+	}
 
 	ASSERT(avl_numnodes(&prio) != 0 || !initial);
 
