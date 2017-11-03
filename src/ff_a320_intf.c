@@ -60,7 +60,9 @@ typedef struct {
 	bool_t		deleted;
 
 	const void	*acf_id;
-	vect3_t		pos_3d;
+	double		rbrg;
+	double		rdist;
+	double		ralt;
 	double		vs;
 	tcas_threat_t	level;
 	avl_node_t	node;
@@ -79,9 +81,6 @@ static struct {
 	int		suppress;
 	int		on_ground;
 	int		gear_down;
-	int		hdg;
-	int		rad_alt;
-	int		baro_alt;
 	int		filter;
 	int		mode;
 
@@ -102,9 +101,12 @@ static struct {
 	int		intr_trend;
 } ids;
 
+static dr_t magvar_dr;
+static double magvar;
+
 static void __stdcall ff_a320_update(double step, void *tag);
-static void update_contact(void *handle, void *acf_id, vect3_t pos_3d,
-    double trk, double vs, tcas_threat_t level);
+static void update_contact(void *handle, void *acf_id, double rbrg,
+    double rdist, double ralt, double vs, tcas_threat_t level);
 static void delete_contact(void *handle, void *acf_id);
 static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
@@ -174,6 +176,8 @@ ff_a320_intf_init(void)
 	avl_create(&contacts_tree, ctc_compar, sizeof (contact_t),
 	    offsetof(contact_t, node));
 
+	fdr_find(&magvar_dr, "sim/flightmodel/position/magnetic_variation");
+
 	return (&ops);
 }
 
@@ -191,6 +195,12 @@ ff_a320_intf_fini(void)
 	avl_destroy(&contacts_tree);
 
 	dbg_log(ff_a320, 1, "fini");
+}
+
+void
+ff_a320_intf_update(void)
+{
+	magvar = dr_getf(&magvar_dr);
 }
 
 static inline int32_t
@@ -334,9 +344,6 @@ ff_a320_ids_init(void)
 	ids.suppress = val_id("Aircraft.Navigation.TCAS.Suppress");
 	ids.on_ground = val_id("Aircraft.Navigation.TCAS.OnGround");
 	ids.gear_down = val_id("Aircraft.Navigation.TCAS.GearsDown");
-	ids.hdg = val_id("Aircraft.Navigation.TCAS.Heading");
-	ids.rad_alt = val_id("Aircraft.Navigation.TCAS.Height");
-	ids.baro_alt= val_id("Aircraft.Navigation.TCAS.Altitude");
 	ids.filter = val_id("Aircraft.Navigation.TCAS.Show");
 	ids.mode = val_id("Aircraft.Navigation.TCAS.Mode");
 
@@ -365,7 +372,6 @@ ff_a320_update(double step, void *tag)
 	static int last_slot = 0;
 	int i;
 	int vs_band_mask = 0;
-	double my_hdg, my_alt;
 	bool_t suppress;
 	tcas_mode_t mode;
 	tcas_filter_t filter = TCAS_FILTER_ALL;
@@ -439,9 +445,6 @@ ff_a320_update(double step, void *tag)
 	 * serviced in `last_slot'.
 	 */
 
-	my_hdg = getf32(ids.hdg);
-	my_alt = getf32(ids.baro_alt);
-
 	mutex_enter(&lock);
 	for (i = 1; i <= MAX_CONTACTS; i++) {
 		int slot = (last_slot + i) % MAX_CONTACTS;
@@ -449,10 +452,7 @@ ff_a320_update(double step, void *tag)
 
 		if (ctc->in_use) {
 			/* Update contact info */
-			double rbrg = dir2hdg(VECT3_TO_VECT2(ctc->pos_3d)) -
-			    my_hdg;
-			double rdist = vect2_abs(VECT3_TO_VECT2(ctc->pos_3d));
-			double ralt = ctc->pos_3d.z - my_alt;
+			double rbrg = ctc->rbrg;
 
 			/* convert to the -180..+180 format for the A320 */
 			if (rbrg > 180)
@@ -460,8 +460,8 @@ ff_a320_update(double step, void *tag)
 
 			dbg_log(ff_a320, 2, "ff_a320_update slot:%d acf_id:%p "
 			    "rbrg:%.1f rdist:%.0f ralt:%.0f vs:%.2f lvl:%d",
-			    slot, ctc->acf_id, rbrg, rdist, ralt, ctc->vs,
-			    ctc->level);
+			    slot, ctc->acf_id, rbrg, ctc->rdist, ctc->ralt,
+			    ctc->vs, ctc->level);
 
 			sets32(ids.intr_index, slot);
 			switch (ctc->level) {
@@ -480,8 +480,8 @@ ff_a320_update(double step, void *tag)
 				break;
 			}
 			setf32(ids.intr_rbrg, rbrg);
-			setf32(ids.intr_rdist, rdist);
-			setf32(ids.intr_ralt, ralt);
+			setf32(ids.intr_rdist, ctc->rdist);
+			setf32(ids.intr_ralt, ctc->ralt);
 			if (ctc->vs >= LEVEL_VVEL_THRESH)
 				sets32(ids.intr_trend, 1);
 			else if (ctc->vs <= -LEVEL_VVEL_THRESH)
@@ -507,17 +507,16 @@ ff_a320_update(double step, void *tag)
 }
 
 static void
-update_contact(void *handle, void *acf_id, vect3_t pos_3d, double trk,
-    double vs, tcas_threat_t level)
+update_contact(void *handle, void *acf_id, double rbrg, double rdist,
+    double ralt, double vs, tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
 
 	UNUSED(handle);
-	UNUSED(trk);
 
-	dbg_log(ff_a320, 2, "update_contact acf_id:%p 3d:%.0fx%.0fx%.0f "
-	    "vs:%.2f lvl:%d", acf_id, pos_3d.x, pos_3d.y, pos_3d.z, vs, level);
+	dbg_log(ff_a320, 2, "update_contact acf_id:%p rpos:%.0fx%.0fx%.0f "
+	    "vs:%.2f lvl:%d", acf_id, rbrg, rdist, ralt, vs, level);
 
 	srch.acf_id = acf_id;
 
@@ -542,7 +541,9 @@ update_contact(void *handle, void *acf_id, vect3_t pos_3d, double trk,
 		ctc->acf_id = acf_id;
 		avl_insert(&contacts_tree, ctc, where);
 	}
-	ctc->pos_3d = pos_3d;
+	ctc->rbrg = rbrg;
+	ctc->rdist = rdist;
+	ctc->ralt = ralt;
 	ctc->vs = vs;
 	ctc->level = level;
 	mutex_exit(&lock);

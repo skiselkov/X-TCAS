@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #include <XPLMDataAccess.h>
 #include <XPLMDisplay.h>
@@ -30,6 +31,7 @@
 
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
+#include <acfutils/conf.h>
 #include <acfutils/dr.h>
 #include <acfutils/geom.h>
 #include <acfutils/log.h>
@@ -60,14 +62,11 @@ static bool_t intf_inited = B_FALSE;
 static bool_t xtcas_inited = B_FALSE;
 static struct {
 	dr_t	time;
-	dr_t	baro_alt_ft;
+	dr_t	elev;
 	dr_t	rad_alt_ft;
 	dr_t	hdg;
 	dr_t	lat;
 	dr_t	lon;
-	dr_t	plane_x;
-	dr_t	plane_y;
-	dr_t	plane_z;
 	dr_t	view_is_ext;
 	dr_t	warn_volume;
 	dr_t	sound_on;
@@ -137,16 +136,12 @@ static void
 sim_intf_init(void)
 {
 	fdr_find(&drs.time, "sim/time/total_running_time_sec");
-	fdr_find(&drs.baro_alt_ft, "sim/flightmodel/misc/h_ind");
+	fdr_find(&drs.elev, "sim/flightmodel/position/elevation");
 	fdr_find(&drs.rad_alt_ft,
 	    "sim/cockpit2/gauges/indicators/radio_altimeter_height_ft_pilot");
 	fdr_find(&drs.lat, "sim/flightmodel/position/latitude");
 	fdr_find(&drs.lon, "sim/flightmodel/position/longitude");
 	fdr_find(&drs.hdg, "sim/flightmodel/position/true_psi");
-
-	fdr_find(&drs.plane_x, "sim/flightmodel/position/local_x");
-	fdr_find(&drs.plane_y, "sim/flightmodel/position/local_y");
-	fdr_find(&drs.plane_z, "sim/flightmodel/position/local_z");
 
 	fdr_find(&drs.view_is_ext, "sim/graphics/view/view_is_external");
 	fdr_find(&drs.warn_volume, "sim/operation/sound/warning_volume_ratio");
@@ -203,7 +198,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	/* grab our aircraft position */
 	my_acf_pos.lat = dr_getf(&drs.lat);
 	my_acf_pos.lon = dr_getf(&drs.lon);
-	my_acf_pos.elev = FEET2MET(dr_getf(&drs.baro_alt_ft));
+	my_acf_pos.elev = dr_getf(&drs.elev);
 	my_acf_agl = FEET2MET(dr_getf(&drs.rad_alt_ft));
 	my_acf_hdg = dr_getf(&drs.hdg);
 
@@ -305,8 +300,8 @@ static float
 floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
     int counter, void *refcon)
 {
-	double volume = (dr_geti(&drs.view_is_ext) != 1 && dr_geti(&drs.sound_on) != 0) ?
-	    dr_getf(&drs.warn_volume) : 0;
+	double volume = (dr_geti(&drs.view_is_ext) != 1 &&
+	    dr_geti(&drs.sound_on) != 0) ? dr_getf(&drs.warn_volume) : 0;
 
 	UNUSED(elapsed_since_last_call);
 	UNUSED(elapsed_since_last_floop);
@@ -363,6 +358,9 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 		xtcas_snd_sys_run(volume);
 	}
 
+	if (ff_a320_intf_inited)
+		ff_a320_intf_update();
+
 	return (-1.0);
 }
 
@@ -415,6 +413,60 @@ test_gui_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 		xplane_test_fini();
 	}
 	return (1);
+}
+
+static void
+config_load(void)
+{
+	conf_t *conf = NULL;
+	char *path;
+	int errline;
+	FILE *fp;
+
+	memset(&xtcas_dbg, 0, sizeof (xtcas_dbg));
+
+	path = mkpathname(plugindir, "X-TCAS.cfg", NULL);
+	if (!file_exists(path, NULL)) {
+		free(path);
+		return;
+	}
+
+	fp = fopen(path, "rb");
+	if (fp == NULL) {
+		logMsg("Error opening configuration file %s: %s",
+		    path, strerror(errno));
+		free(path);
+		return;
+	}
+	conf = conf_read(fp, &errline);
+	if (conf == NULL) {
+		logMsg("Error parsing configuration file %s: "
+		    "error on line %d\n", path, errline);
+		free(path);
+		fclose(fp);
+		return;
+	}
+
+	free(path);
+	fclose(fp);
+
+#define	READ_DBG_CONF(var) \
+	conf_get_i(conf, "debug_" #var, &xtcas_dbg.var)
+	READ_DBG_CONF(all);
+	READ_DBG_CONF(snd);
+	READ_DBG_CONF(wav);
+	READ_DBG_CONF(tcas);
+	READ_DBG_CONF(xplane);
+	READ_DBG_CONF(test);
+	READ_DBG_CONF(ra);
+	READ_DBG_CONF(cpa);
+	READ_DBG_CONF(sl);
+	READ_DBG_CONF(contact);
+	READ_DBG_CONF(threat);
+	READ_DBG_CONF(ff_a320);
+#undef	READ_DBG_CONF
+
+	conf_free(conf);
 }
 
 PLUGIN_API int
@@ -486,6 +538,7 @@ XPluginStop(void)
 PLUGIN_API int
 XPluginEnable(void)
 {
+	config_load();
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector,
 	    xplm_Phase_Airplanes, 0, NULL);

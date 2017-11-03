@@ -73,7 +73,7 @@
  */
 #define	HINT_INCR_FACT			1.2
 
-#define	TCAS_TEST_DUR			10	/* seconds */
+#define	TCAS_TEST_DUR			8	/* seconds */
 
 #define	PRINTF_ACF_FMT "rdy:%d  alt_rptg:%d  pos:%3.04f/%2.4f/%4.1f  " \
 	"agl:%.0f  gs:%.1f  trk:%.0f  trk_v:%.2fx%.2f  vvel:%.1f  ongnd:%d"
@@ -816,9 +816,9 @@ copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy, bool_t test)
 	} while (0)
 
 		ADD_TEST_CONTACT(1, -2, 3, 1000, 0, OTH_THREAT);
-		ADD_TEST_CONTACT(2, 2, 3, 1000, -1000, PROX_THREAT);
+		ADD_TEST_CONTACT(2, 2, 3, 200, -1000, PROX_THREAT);
 		ADD_TEST_CONTACT(3, -2, 0, -200, 1000, TA_THREAT);
-		ADD_TEST_CONTACT(4, 2, 0, 200, 0, RA_THREAT_CORR);
+		ADD_TEST_CONTACT(4, 2, 0, -1000, 0, RA_THREAT_CORR);
 
 #undef	ADD_TEST_CONTACT
 	}
@@ -2102,8 +2102,10 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 }
 
 static void
-update_contacts(avl_tree_t *other_acf, bool_t test)
+update_contacts(tcas_acf_t *my_acf, avl_tree_t *other_acf, bool_t test)
 {
+	vect2_t my_pos_2d = VECT3_TO_VECT2(my_acf->cur_pos_3d);
+
 	if (tcas_state.filter == TCAS_FILTER_THRT &&
 	    tcas_state.adv_state == ADV_STATE_NONE && !test) {
 		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
@@ -2116,17 +2118,24 @@ update_contacts(avl_tree_t *other_acf, bool_t test)
 	} else {
 		for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 		    acf = AVL_NEXT(other_acf, acf)) {
+			if (out_ops == NULL)
+				continue;
 			if (!acf->on_ground) {
-				if (out_ops != NULL) {
-					out_ops->update_contact(out_ops->handle,
-					    acf->acf_id, acf->cur_pos_3d,
-					    acf->trk, acf->vvel, acf->threat);
-				}
+				vect2_t pos_2d =
+				    VECT3_TO_VECT2(acf->cur_pos_3d);
+				vect2_t d_pos_2d = vect2_sub(pos_2d, my_pos_2d);
+				double rdist = vect2_abs(d_pos_2d);
+				double rbrg = (rdist > 0 ?
+				    normalize_hdg(dir2hdg(d_pos_2d) -
+				    my_acf->hdg) : 0);
+				double ralt = acf->cur_pos_3d.z -
+				    my_acf->cur_pos_3d.z;
+				out_ops->update_contact(out_ops->handle,
+				    acf->acf_id, rbrg, rdist, ralt,
+				    acf->vvel, acf->threat);
 			} else {
-				if (out_ops != NULL) {
-					out_ops->delete_contact(out_ops->handle,
-					    acf->acf_id);
-				}
+				out_ops->delete_contact(out_ops->handle,
+				    acf->acf_id);
 			}
 		}
 	}
@@ -2249,7 +2258,7 @@ main_loop(void *ignored)
 		 * Update the avionics on the threat status of all the
 		 * contacts that we have.
 		 */
-		update_contacts(&other_acf, test);
+		update_contacts(&my_acf, &other_acf, test);
 
 		destroy_CPAs(&cpas);
 

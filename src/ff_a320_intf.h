@@ -27,6 +27,7 @@ extern "C" {
 
 const sim_intf_output_ops_t *ff_a320_intf_init(void);
 void ff_a320_intf_fini(void);
+void ff_a320_intf_update(void);
 
 #ifdef __cplusplus
 }
