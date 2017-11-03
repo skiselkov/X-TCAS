@@ -29,8 +29,10 @@ INCLUDEPATH += ../SDK
 INCLUDEPATH += ../OpenAL/include
 INCLUDEPATH += $$[LIBACFUTILS]/src
 
+
 QMAKE_CFLAGS += -std=c99 -g -W -Wall -Wextra -Werror -fvisibility=hidden
 QMAKE_CFLAGS += -Wunused-result -DTEST_STANDALONE_BUILD=0
+QMAKE_CFLAGS += -DXTCAS_VER=0x$$system("git rev-parse --short HEAD")
 
 # _GNU_SOURCE needed on Linux for getline()
 # DEBUG - used by our ASSERT macro

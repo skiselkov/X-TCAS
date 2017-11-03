@@ -50,8 +50,8 @@
 #define	FLOOP_INTVAL			0.1
 #define	POS_UPDATE_INTVAL		0.1
 #define	STARTUP_DELAY			5.0	/* seconds */
-#define	XTCAS_PLUGIN_NAME		"X-TCAS 1.0"
-#define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas.1.0"
+#define	XTCAS_PLUGIN_NAME		"X-TCAS (%x)"
+#define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas"
 #define	XTCAS_PLUGIN_DESCRIPTION \
 	"Generic TCAS II v7.1 implementation for X-Plane"
 
@@ -489,9 +489,10 @@ XPluginStart(char *name, char *sig, char *desc)
 			*p = '\0';
 	}
 
-	strcpy(name, XTCAS_PLUGIN_NAME);
+	snprintf(name, 64, XTCAS_PLUGIN_NAME, XTCAS_VER);
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
+	logMsg("This is X-TCAS version %x", XTCAS_VER);
 	sim_intf_init();
 	snd_dir = mkpathname(plugindir, "data", "msgs", NULL);
 	if (!xtcas_snd_sys_init(snd_dir)) {
