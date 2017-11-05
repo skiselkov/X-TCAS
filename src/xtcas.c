@@ -2319,6 +2319,8 @@ xtcas_init(const sim_intf_input_ops_t *intf_input_ops,
 {
 	dbg_log(tcas, 1, "init");
 
+	inited = B_TRUE;
+
 	ASSERT(intf_input_ops != NULL);
 	ASSERT(intf_input_ops->get_time != NULL);
 	ASSERT(intf_input_ops->get_my_acf_pos != NULL);
@@ -2345,8 +2347,6 @@ xtcas_init(const sim_intf_input_ops_t *intf_input_ops,
 	mutex_init(&worker_lock);
 	cv_init(&worker_cv);
 	VERIFY(thread_create(&worker_thr, main_loop, NULL));
-
-	inited = B_TRUE;
 }
 
 void
