@@ -67,6 +67,8 @@ static acf_t		my_acf = { .inited = B_FALSE };
 static list_t		other_acf;
 static geo_pos2_t	refpt = {0, 0};
 static double		refrot = 0;
+static bool_t		auto_complete = B_FALSE;
+static bool_t		auto_completed = B_FALSE;
 static double		gnd_elev = 0;
 static double		scaleh = 100;
 static double		scalev = 200;
@@ -135,7 +137,8 @@ read_command_file(FILE *fp)
 		}
 
 		if (strcmp(cmd, "filter") == 0) {
-			fscanf(fp, "%63s", cmd);
+			if (fscanf(fp, "%63s", cmd) != 1)
+				*cmd = 0;
 			if (strcasecmp(cmd, "all") == 0) {
 				xtcas_set_filter(TCAS_FILTER_ALL);
 			} else if (strcasecmp(cmd, "thrt") == 0) {
@@ -151,7 +154,8 @@ read_command_file(FILE *fp)
 				return (B_FALSE);
 			}
 		} else if (strcmp(cmd, "mode") == 0) {
-			fscanf(fp, "%63s", cmd);
+			if (fscanf(fp, "%63s", cmd) != 1)
+				*cmd = 0;
 			if (strcasecmp(cmd, "stby") == 0) {
 				xtcas_set_mode(TCAS_MODE_STBY);
 			} else if (strcasecmp(cmd, "taonly") == 0) {
@@ -320,6 +324,8 @@ read_command_file(FILE *fp)
 			}
 			man->automan = B_TRUE;
 			list_insert_tail(&acf->maneuvers, man);
+		} else if (strcmp(cmd, "auto_complete") == 0) {
+			auto_complete = B_TRUE;
 		} else {
 			fprintf(stderr, "Command file syntax error: "
 			    "unknown keyword \"%s\"\n", cmd);
@@ -827,7 +833,7 @@ main(int argc, char **argv)
 	}
 
 	mutex_enter(&mtx);
-	for (;;) {
+	while (!auto_completed) {
 		if (gfx) {
 			int c = getch();
 
@@ -1013,6 +1019,8 @@ update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg, tcas_RA_type_t type,
 		/* clear of conflict */
 		RA_counter = 0;
 		RA_tgt = 0;
+		if (auto_complete)
+			auto_completed = B_TRUE;
 	} else if (adv == ADV_STATE_RA) {
 		if (fabs(my_acf.vs - RA_tgt) < 0.5 || RA_counter == 0 ||
 		    reversal)

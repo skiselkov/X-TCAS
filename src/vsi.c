@@ -46,11 +46,19 @@
 #define	VSI_STYLE_ATR		1
 #define	VSI_STYLE_BENDIX_KING	2
 
-#define	VSI_STYLE	VSI_STYLE_BENDIX_KING
-
 #ifndef	VSI_STYLE
 #define	VSI_STYLE	VSI_STYLE_ATR
 #endif
+
+#define	VSI_SCREEN_DELAY	2
+#define	VSI_SCREEN_WHITE_DELAY	2.1
+#define	VSI_RING_DELAY		4
+#define	VSI_IND_DELAY		6
+#define	VSI_TCAS_DELAY		8
+
+#define	MIN_VOLTS		22
+#define	MAX_BUSNR		6
+#define	BRT_DFL			50
 
 #define	X(x)	((x) * tex->sz)
 
@@ -74,7 +82,7 @@ static int vsi_scales[VSI_NUM_SCALES] = { 5, 10, 20, 40 };
 
 #define	DRAW_INTVAL		50000	/* microseconds = 20 fps */
 #define	MAX_SZ			2048	/* pixels */
-#define	VS_DR_NAME_MAX_LEN	128	/* bytes */
+#define	DR_NAME_MAX		128	/* bytes */
 #define	BACKLIGHT_BLEED		0.05
 #define	DEFAULT_BRT		50.0
 #define	FONT_FILE		"RobotoCondensed-Regular.ttf"
@@ -123,12 +131,22 @@ typedef struct {
 	dr_t		brt_dr;
 
 	double		vs_value;	/* always in feet per minute */
+
 	dr_t		vs_dr;
-	char		vs_dr_name[VS_DR_NAME_MAX_LEN];
+	char		vs_dr_name[DR_NAME_MAX];
 	dr_t		vs_dr_name_dr;
+
 	vs_dr_fmt_t	vs_dr_fmt;
 	dr_t		vs_dr_fmt_dr;
 
+	dr_t		fail_dr;
+	char		fail_dr_name[DR_NAME_MAX];
+	dr_t		fail_dr_name_dr;
+
+	int		busnr;
+	dr_t		busnr_dr;
+
+	bool_t		functional;
 	bool_t		running;
 	bool_t		shutdown;
 	thread_t	thread;
@@ -142,6 +160,8 @@ typedef struct {
 
 	mutex_t		state_lock;
 	vsi_state_t	state;
+
+	uint64_t	start_time;
 } vsi_t;
 
 typedef struct {
@@ -231,6 +251,14 @@ static vsi_t vsis[MAX_VSIS];
 static bool_t inited = B_FALSE;
 static mutex_t ctc_lock;
 static avl_tree_t ctcs;
+static dr_t bus_volts;
+
+static int xpdr_busnr = 0;
+static dr_t xpdr_busnr_dr;
+static dr_t xpdr_fail;
+static dr_t xpdr_mode;
+static bool_t xpdr_functional = B_FALSE;
+static bool_t xpdr_stby = B_FALSE;
 
 static FT_Library ft = NULL;
 static FT_Face font = NULL;
@@ -420,6 +448,9 @@ draw_needle(vsi_t *vsi, vsi_tex_t *tex)
 
 	double angle = find_vs_angle(FPM2MPS(vsi->vs_value));
 
+	if (USEC2SEC(microclock() - vsi->start_time) < VSI_IND_DELAY)
+		return;
+
 	cairo_save(tex->cr);
 	cairo_rotate(tex->cr, DEG2RAD(angle));
 
@@ -492,6 +523,9 @@ draw_own_acf(vsi_t *vsi, vsi_tex_t *tex)
 #endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
 	vect2_t v = scale_ctc(vsi, ZERO_VECT2, B_FALSE);
 
+	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY)
+		return;
+
 	cairo_set_line_width(tex->cr, X(OWN_ACF_SYM_THICKNESS));
 
 #if	VSI_STYLE == VSI_STYLE_ATR
@@ -561,6 +595,9 @@ static void
 draw_contacts(vsi_t *vsi, vsi_tex_t *tex)
 {
 #define	CTC_SZ		0.06
+
+	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY)
+		return;
 
 	cairo_set_line_width(tex->cr, X(0.006));
 	cairo_set_font_face(tex->cr, cr_font);
@@ -663,6 +700,8 @@ draw_band(vsi_t *vsi, vsi_tex_t *tex, double vs_lo, double vs_hi,
 {
 	double a1 = find_vs_angle(vs_lo), a2 = find_vs_angle(vs_hi);
 
+	UNUSED(vsi);
+
 	cairo_arc(tex->cr, 0, 0, X(VSI_RING_RADIUS), DEG2RAD(a1),
 	    DEG2RAD(a2));
 	cairo_arc_negative(tex->cr, 0, 0, X(VSI_RING_RADIUS + thickness),
@@ -690,6 +729,9 @@ draw_color_bands(vsi_t *vsi, vsi_tex_t *tex)
 #endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
 
 	vsi_state_t st;
+
+	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY)
+		return;
 
 	mutex_enter(&vsi->state_lock);
 	st = vsi->state;
@@ -730,9 +772,12 @@ draw_mode(vsi_t *vsi, vsi_tex_t *tex)
 	tcas_mode_t mode = xtcas_get_mode();
 	cairo_text_extents_t te;
 
-	if (xtcas_test_is_in_prog())
+	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY ||
+	    (!xpdr_functional && !xpdr_stby))
+		msg = "TCAS FAIL";
+	else if (xtcas_test_is_in_prog())
 		msg = "TEST";
-	else if (mode == TCAS_MODE_STBY)
+	else if (mode == TCAS_MODE_STBY || xpdr_stby)
 		msg = "TCAS OFF";
 	else if (mode == TCAS_MODE_TAONLY)
 		msg = "TA ONLY";
@@ -744,9 +789,9 @@ draw_mode(vsi_t *vsi, vsi_tex_t *tex)
 	cairo_text_extents(tex->cr, msg, &te);
 
 	set_color(vsi, tex, 1, 1, 1);
-	cairo_rectangle(tex->cr, X(0.5 - MSG_SZ * 0.1 - MSG_X_OFF) - te.width,
-	    -te.height / 2 - X(MSG_SZ * 0.1),
-	    te.width + X(MSG_SZ * 0.2), te.height + X(MSG_SZ * 0.2));
+	cairo_rectangle(tex->cr, X(0.5 - MODE_MSG_SZ * 0.1 - MSG_X_OFF) -
+	    te.width, -te.height / 2 - X(MODE_MSG_SZ * 0.1),
+	    te.width + X(MODE_MSG_SZ * 0.2), te.height + X(MODE_MSG_SZ * 0.2));
 	cairo_fill(tex->cr);
 
 	set_color(vsi, tex, 0, 0, 0);
@@ -757,31 +802,42 @@ draw_mode(vsi_t *vsi, vsi_tex_t *tex)
 #define	MODE_MSG_SZ	0.06
 #define	MSG_X_OFF	-0.48
 #define	MSG_Y_OFF	0.38
-	const char *msg;
+	const char *msgs[2] = { NULL, NULL };
 	tcas_mode_t mode = xtcas_get_mode();
-	cairo_text_extents_t te;
 
-	if (xtcas_test_is_in_prog()) {
+	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY ||
+	    (!xpdr_functional && !xpdr_stby)) {
 		set_color(vsi, tex, 1, 1, 0);
-		msg = "TEST";
-	} else if (mode == TCAS_MODE_STBY) {
+		msgs[0] = "NO TCAS";
+	} else if (xtcas_test_is_in_prog()) {
+		set_color(vsi, tex, 1, 1, 0);
+		msgs[0] = "     TEST";
+	} else if (mode == TCAS_MODE_STBY || xpdr_stby) {
 		set_color(vsi, tex, CYAN_RGB);
-		msg = "NO TCAS";
+		msgs[0] = "     TCAS";
+		msgs[1] = "     STBY";
 	} else if (mode == TCAS_MODE_TAONLY) {
 		set_color(vsi, tex, CYAN_RGB);
-		msg = "TA ONLY";
+		msgs[0] = "TA ONLY";
 	} else {
 		set_color(vsi, tex, CYAN_RGB);
-		msg = "TA/RA";
+		msgs[0] = "    TA/RA";
 	}
 
 	cairo_set_font_face(tex->cr, cr_font);
 	cairo_set_font_size(tex->cr, round(X(MODE_MSG_SZ)));
-	cairo_text_extents(tex->cr, msg, &te);
 
-	cairo_move_to(tex->cr, X(MSG_X_OFF),
-	    X(MSG_Y_OFF) - te.height / 2 - te.y_bearing);
-	cairo_show_text(tex->cr, msg);
+	for (int i = 0; i < 2; i++) {
+		cairo_text_extents_t te;
+
+		if (msgs[i] == NULL)
+			continue;
+		cairo_text_extents(tex->cr, msgs[i], &te);
+		cairo_move_to(tex->cr, X(MSG_X_OFF),
+		    X(MSG_Y_OFF + i * MODE_MSG_SZ) -
+		    te.height / 2 - te.y_bearing);
+		cairo_show_text(tex->cr, msgs[i]);
+	}
 
 #endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
 }
@@ -803,6 +859,9 @@ draw_scale(vsi_t *vsi, vsi_tex_t *tex)
 #define	SCALE_UNIT_Y_OFF	(BOX_Y_OFF + SCALE_MSG_SZ + SCALE_UNIT_SZ / 2)
 	char msg[8];
 	cairo_text_extents_t te;
+
+	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY)
+		return;
 
 	set_color(vsi, tex, 1, 1, 1);
 
@@ -850,11 +909,32 @@ draw_scale(vsi_t *vsi, vsi_tex_t *tex)
 static void
 vsi_draw(vsi_t *vsi, vsi_tex_t *tex)
 {
+	uint64_t now = microclock();
+
 	cairo_translate(tex->cr, tex->sz / 2, tex->sz / 2);
 
+	if (!vsi->functional ||
+	    USEC2SEC(now - vsi->start_time) < VSI_SCREEN_DELAY) {
+		cairo_set_source_rgb(tex->cr, 0, 0, 0);
+		cairo_rectangle(tex->cr, X(-0.5), X(-0.5), X(1), X(1));
+		cairo_fill(tex->cr);
+		goto out;
+	}
+
+	if (USEC2SEC(now - vsi->start_time) < VSI_SCREEN_WHITE_DELAY) {
+		cairo_set_source_rgb(tex->cr, 1, 1, 1);
+		cairo_rectangle(tex->cr, X(-0.5), X(-0.5), X(1), X(1));
+		cairo_fill(tex->cr);
+		goto out;
+	}
 	set_color(vsi, tex, 0, 0, 0);
 	cairo_rectangle(tex->cr, X(-0.5), X(-0.5), X(1), X(1));
 	cairo_fill(tex->cr);
+
+	if (USEC2SEC(now - vsi->start_time) < VSI_RING_DELAY) {
+		draw_ranges(vsi, tex);
+		goto out;
+	}
 
 	draw_color_bands(vsi, tex);
 	draw_ranges(vsi, tex);
@@ -864,6 +944,7 @@ vsi_draw(vsi_t *vsi, vsi_tex_t *tex)
 	draw_mode(vsi, tex);
 	draw_scale(vsi, tex);
 
+out:
 	cairo_identity_matrix(tex->cr);
 }
 
@@ -892,6 +973,14 @@ vsi_worker(vsi_t *vsi)
 			    CAIRO_FORMAT_ARGB32, sz, sz);
 			tex->cr = cairo_create(tex->surf);
 		}
+
+		if (vsi->functional) {
+			if (vsi->start_time == 0)
+				vsi->start_time = microclock();
+		} else {
+			vsi->start_time = 0;
+		}
+
 		vsi_draw(vsi, tex);
 		tex->chg = B_TRUE;
 
@@ -956,19 +1045,77 @@ done:
 	mutex_exit(&vsi->tex_lock);
 }
 
+static void
+vsi_drs_update(vsi_t *vsi)
+{
+	bool_t failed = B_FALSE, powered = B_TRUE;
+
+	if (strcmp(vsi->vs_dr.name, vsi->vs_dr_name) != 0 &&
+	    !dr_find(&vsi->vs_dr, "%s", vsi->vs_dr_name)) {
+		memset(&vsi->vs_dr, 0, sizeof (vsi->vs_dr));
+		return;
+	}
+	if (strcmp(vsi->fail_dr.name, vsi->fail_dr_name) != 0 &&
+	    !dr_find(&vsi->fail_dr, "%s", vsi->fail_dr_name)) {
+		memset(&vsi->fail_dr, 0, sizeof (vsi->fail_dr));
+	}
+	if (strcmp(vsi->fail_dr.name, "") != 0)
+		failed = (dr_geti(&vsi->fail_dr) == 6);
+
+	if (vsi->busnr >= 0 && vsi->busnr < MAX_BUSNR) {
+		double volts;
+
+		VERIFY3S(dr_getvf(&bus_volts, &volts, vsi->busnr, 1), ==, 1);
+		powered = (volts >= MIN_VOLTS);
+	}
+	vsi->functional = (!failed && powered);
+
+	switch (vsi->vs_dr_fmt) {
+	case VS_FMT_FPM:
+		vsi->vs_value = dr_getf(&vsi->vs_dr);
+		break;
+	case VS_FMT_MPS:
+		vsi->vs_value = MPS2FPM(dr_getf(&vsi->vs_dr));
+		break;
+	case VS_FMT_FPS:
+		vsi->vs_value = dr_getf(&vsi->vs_dr) * 60;
+		break;
+	case VS_FMT_MPM:
+		vsi->vs_value = MPS2FPM(dr_getf(&vsi->vs_dr) / 60);
+		break;
+	}
+}
+
 static int
 draw_vsis(XPLMDrawingPhase phase, int before, void *refcon)
 {
+	bool_t xpdr_powered = B_TRUE;
+
 	UNUSED(phase);
 	UNUSED(before);
 	UNUSED(refcon);
 
+	if (xpdr_busnr >= 0 && xpdr_busnr < MAX_BUSNR) {
+		double volts;
+
+		VERIFY3S(dr_getvf(&bus_volts, &volts, xpdr_busnr, 1), ==, 1);
+		xpdr_powered = (volts >= MIN_VOLTS);
+	}
+
+	xpdr_stby = (dr_geti(&xpdr_mode) == 1 && xpdr_powered &&
+	    dr_geti(&xpdr_fail) != 6);
+	xpdr_functional = (dr_geti(&xpdr_mode) >= 2 && xpdr_powered &&
+	    dr_geti(&xpdr_fail) != 6);
+
 	for (int i = 0; i < MAX_VSIS; i++) {
 		vsi_t *vsi = &vsis[i];
 
-		if (vsi->sz == 0) {
+		if (vsi->sz <= 0 || vsi->sz > MAX_SZ) {
 			if (vsi->running)
 				shutdown_vsi(i);
+			vsi->start_time = 0;
+			vsi->brt = BRT_DFL;
+			vsi->scale_enum = VSI_SCALE_DFL;
 			continue;
 		} else if (!vsi->running) {
 			vsi->shutdown = B_FALSE;
@@ -976,25 +1123,7 @@ draw_vsis(XPLMDrawingPhase phase, int before, void *refcon)
 			VERIFY(thread_create(&vsi->thread, vsi_worker, vsi));
 			continue;
 		}
-		if (strcmp(vsi->vs_dr.name, vsi->vs_dr_name) != 0 &&
-		    !dr_find(&vsi->vs_dr, "%s", vsi->vs_dr_name)) {
-			memset(&vsi->vs_dr, 0, sizeof (vsi->vs_dr));
-			continue;
-		}
-		switch (vsi->vs_dr_fmt) {
-		case VS_FMT_FPM:
-			vsi->vs_value = dr_getf(&vsi->vs_dr);
-			break;
-		case VS_FMT_MPS:
-			vsi->vs_value = MPS2FPM(dr_getf(&vsi->vs_dr));
-			break;
-		case VS_FMT_FPS:
-			vsi->vs_value = dr_getf(&vsi->vs_dr) * 60;
-			break;
-		case VS_FMT_MPM:
-			vsi->vs_value = MPS2FPM(dr_getf(&vsi->vs_dr) / 60);
-			break;
-		}
+		vsi_drs_update(vsi);
 		composite_vsi(&vsis[i]);
 	}
 
@@ -1053,11 +1182,15 @@ vsi_init(const char *plugindir)
 		    "xtcas/vsis/%d/data_src", i);
 		dr_create_i(&vsi->vs_dr_fmt_dr, (int *)&vsi->vs_dr_fmt, B_TRUE,
 		    "xtcas/vsis/%d/data_src_fmt", i);
+		dr_create_b(&vsi->fail_dr_name_dr, vsi->fail_dr_name,
+		    sizeof (vsi->fail_dr_name), B_TRUE,
+		    "xtcas/vsis/%d/fail_dr", i);
 
 		mutex_init(&vsi->tex_lock);
 		vsi->cur_tex = -1;
-		vsi->brt = 50;
+		vsi->brt = BRT_DFL;
 		vsi->scale_enum = VSI_SCALE_DFL;
+		vsi->busnr = i;
 
 		for (int j = 0; j < 2; j++) {
 			glGenTextures(1, &vsi->tex[j].gl_tex);
@@ -1073,15 +1206,33 @@ vsi_init(const char *plugindir)
 		mutex_init(&vsi->state_lock);
 	}
 
-	snprintf(vsis[0].vs_dr_name, sizeof (vsis[0].vs_dr_name),
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_pilot");
-	snprintf(vsis[1].vs_dr_name, sizeof (vsis[1].vs_dr_name),
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_copilot");
-	snprintf(vsis[2].vs_dr_name, sizeof (vsis[2].vs_dr_name),
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_pilot");
-	snprintf(vsis[3].vs_dr_name, sizeof (vsis[3].vs_dr_name),
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_copilot");
-	vsis[0].sz = 230;
+	strlcpy(vsis[0].vs_dr_name,
+	    "sim/cockpit2/gauges/indicators/vvi_fpm_pilot",
+	    sizeof (vsis[0].vs_dr_name));
+	strlcpy(vsis[1].vs_dr_name,
+	    "sim/cockpit2/gauges/indicators/vvi_fpm_copilot",
+	    sizeof (vsis[1].vs_dr_name));
+	strlcpy(vsis[2].vs_dr_name,
+	    "sim/cockpit2/gauges/indicators/vvi_fpm_pilot",
+	    sizeof (vsis[2].vs_dr_name));
+	strlcpy(vsis[3].vs_dr_name,
+	    "sim/cockpit2/gauges/indicators/vvi_fpm_copilot",
+	    sizeof (vsis[3].vs_dr_name));
+
+	strlcpy(vsis[0].fail_dr_name, "sim/operation/failures/rel_ss_vvi",
+	    sizeof (vsis[0].fail_dr_name));
+	strlcpy(vsis[1].fail_dr_name, "sim/operation/failures/rel_cop_vvi",
+	    sizeof (vsis[1].fail_dr_name));
+	strlcpy(vsis[2].fail_dr_name, "sim/operation/failures/rel_ss_vvi",
+	    sizeof (vsis[2].fail_dr_name));
+	strlcpy(vsis[3].fail_dr_name, "sim/operation/failures/rel_cop_vvi",
+	    sizeof (vsis[3].fail_dr_name));
+
+	fdr_find(&bus_volts, "sim/cockpit2/electrical/bus_volts");
+	fdr_find(&xpdr_fail, "sim/operation/failures/rel_xpndr");
+	fdr_find(&xpdr_mode, "sim/cockpit2/radios/actuators/transponder_mode");
+	dr_create_i(&xpdr_busnr_dr, &xpdr_busnr, B_TRUE,
+	    "xtcas/vsis/xpdr_busnr");
 
 	if ((err = FT_Init_FreeType(&ft)) != 0) {
 		logMsg("Error initializing FreeType library: %s",
@@ -1119,6 +1270,7 @@ vsi_fini(void)
 		dr_delete(&vsis[i].scale_enum_dr);
 		dr_delete(&vsis[i].vs_dr_name_dr);
 		dr_delete(&vsis[i].vs_dr_fmt_dr);
+		dr_delete(&vsis[i].fail_dr_name_dr);
 
 		for (int j = 0; j < 2; j++) {
 			if (vsis[i].tex[j].gl_tex != 0)
@@ -1133,6 +1285,8 @@ vsi_fini(void)
 		cv_destroy(&vsis[i].cv);
 		mutex_destroy(&vsis[i].state_lock);
 	}
+
+	dr_delete(&xpdr_busnr_dr);
 
 	while ((ctc = avl_destroy_nodes(&ctcs, &cookie)) != NULL)
 		free(ctc);

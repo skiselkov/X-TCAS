@@ -945,8 +945,8 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 	for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 	    acf = AVL_NEXT(other_acf, acf)) {
 		vect2_t dir;
-		vect3_t pos_3d, vel, rel_vel, cpa_pos, my_cpa_pos;
-		double d_vvel, t_cpa;
+		vect3_t rel_pos_3d, vel, rel_vel, cpa_pos, my_cpa_pos;
+		double t_cpa;
 		cpa_t *cpa;
 
 		/*
@@ -960,25 +960,27 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		    my_acf->cur_pos.elev) > LONG_VERT_FILTER)
 			continue;
 
-		d_vvel = (acf->d_vvel >= D_VVEL_MAN_THRESH ? acf->d_vvel : 0);
-		pos_3d = acf->cur_pos_3d;
+		rel_pos_3d = VECT3(acf->cur_pos_3d.x, acf->cur_pos_3d.y,
+		    acf->cur_pos_3d.z - my_pos_3d.z);
 		dir = acf->trk_v;
-		vel = VECT3(dir.x, dir.y, acf->vvel + d_vvel * D_VVEL_MAN_TIME);
+		vel = VECT3(dir.x, dir.y, acf->vvel);
 		rel_vel = vect3_sub(vel, my_vel);
 		if (!IS_ZERO_VECT3(rel_vel)) {
-			t_cpa = floor((-(pos_3d.x * rel_vel.x) -
-			    (pos_3d.y * rel_vel.y) - (pos_3d.z - rel_vel.z)) /
+			t_cpa = floor((-(rel_pos_3d.x * rel_vel.x) -
+			    (rel_pos_3d.y * rel_vel.y) -
+			    (rel_pos_3d.z * rel_vel.z)) /
 			    (POW2(rel_vel.x) + POW2(rel_vel.y) +
 			    POW2(rel_vel.z)));
 			/*
 			 * If CPA is in the past, the current position is the
-			 * CPA. */
+			 * CPA.
+			 */
 			t_cpa = MAX(t_cpa, 0);
 		} else {
 			t_cpa = 0;
 		}
 
-		cpa_pos = vect3_add(pos_3d, vect3_scmul(vel, t_cpa));
+		cpa_pos = vect3_add(acf->cur_pos_3d, vect3_scmul(vel, t_cpa));
 		my_cpa_pos = vect3_add(my_pos_3d, vect3_scmul(my_vel, t_cpa));
 
 		cpa = make_cpa(t_cpa, my_acf, acf, my_cpa_pos, cpa_pos);
@@ -1523,20 +1525,17 @@ ra_construct(const tcas_acf_t *my_acf, const tcas_RA_info_t *ri,
 		 * 1)
 		 *	a: the RA sense is upward
 		 *	b: currently we are below the intruder
-		 *	c: at CPA our elev will be above the intruder
 		 * 2)
 		 *	a: the RA sense is downward
 		 *	b: currently we are above the intruder
-		 *	c: at CPA our elev will be below the intruder
 		 */
 		ra->crossing |= ((ri->sense == RA_SENSE_UPWARD &&
 		    cpa->acf_b->cur_pos_3d.z - cpa->acf_a->cur_pos_3d.z >
-		    EQ_ALT_THRESH &&
-		    cpa->pos_a.z - cpa->pos_b.z > EQ_ALT_THRESH) ||
+		    EQ_ALT_THRESH) ||
 		    (ri->sense == RA_SENSE_DOWNWARD &&
 		    cpa->acf_a->cur_pos_3d.z - cpa->acf_b->cur_pos_3d.z >
-		    EQ_ALT_THRESH &&
-		    cpa->pos_b.z - cpa->pos_a.z > EQ_ALT_THRESH));
+		    EQ_ALT_THRESH));
+
 	}
 	ASSERT(isfinite(ra->min_sep));
 	ra->alim_achieved = (ra->min_sep >= sl->alim_RA);
@@ -1912,11 +1911,14 @@ destroy_RA_hints(avl_tree_t *RA_hints)
 static void
 construct_RA_hints(avl_tree_t *RA_hints, avl_tree_t *RA_cpas)
 {
+	ASSERT(tcas_state.adv_state == ADV_STATE_RA ||
+	    avl_numnodes(RA_cpas) == 0);
 	for (cpa_t *cpa = avl_first(RA_cpas); cpa != NULL;
 	    cpa = AVL_NEXT(RA_cpas, cpa)) {
 		tcas_RA_hint_t *hint = calloc(1, sizeof (*hint));
 		hint->acf_id = cpa->acf_b->acf_id;
 		hint->level = cpa->acf_b->threat;
+		ASSERT3U(hint->level, >=, RA_THREAT_PREV);
 		hint->slow_closure = cpa->acf_b->slow_closure;
 		avl_add(RA_hints, hint);
 	}
@@ -2296,7 +2298,7 @@ xtcas_run(void)
 	ASSERT(inited);
 
 	/* protection in case the sim is paused */
-	if (t <= last_collect_t + WORKER_LOOP_INTVAL)
+	if (t < last_collect_t + WORKER_LOOP_INTVAL)
 		return;
 	last_collect_t = t;
 
@@ -2402,8 +2404,13 @@ xtcas_get_SL(void)
 }
 
 void
-xtcas_test(void)
+xtcas_test(bool_t force_fail)
 {
+	if (force_fail) {
+		logMsg("Cannot perform TCAS test: transponder has failed");
+		xtcas_play_msg(TCAS_TEST_FAIL);
+		return;
+	}
 	if (tcas_state.mode != TCAS_MODE_STBY) {
 		logMsg("Cannot perform TCAS test: TCAS mode not STBY");
 		xtcas_play_msg(TCAS_TEST_FAIL);

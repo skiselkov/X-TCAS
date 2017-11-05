@@ -397,8 +397,24 @@ tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 		return (1);
 
 	if (ref == tcas_test_cmd) {
-		logMsg("TCAS TEST STARTED");
-		xtcas_test();
+#if	VSI_DRAW_MODE
+		dr_t xpdr_fail, xpdr_mode;
+
+		fdr_find(&xpdr_fail, "sim/operation/failures/rel_xpndr");
+		fdr_find(&xpdr_mode, "sim/cockpit/radios/transponder_mode");
+		if (dr_geti(&xpdr_mode) == 0)
+			return (1);
+		if (dr_geti(&xpdr_fail) == 6) {
+			xtcas_test(B_TRUE);
+			return (1);
+		}
+#endif	/* VSI_DRAW_MODE */
+		if (xtcas_get_mode() == TCAS_MODE_STBY) {
+			logMsg("TCAS TEST STARTED");
+			xtcas_test(B_FALSE);
+		} else {
+			logMsg("Cannot perform TCAS TEST: mode not STBY");
+		}
 	} else if (ref == mode_stby_cmd) {
 		logMsg("TCAS MODE: STBY");
 		xtcas_set_mode(TCAS_MODE_STBY);
