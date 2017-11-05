@@ -2414,3 +2414,9 @@ xtcas_test(void)
 	tcas_state.test_in_prog = B_TRUE;
 	mutex_exit(&tcas_state.test_lock);
 }
+
+bool_t
+xtcas_test_is_in_prog(void)
+{
+	return (tcas_state.test_in_prog);
+}

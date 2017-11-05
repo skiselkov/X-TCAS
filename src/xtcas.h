@@ -317,6 +317,7 @@ tcas_filter_t xtcas_get_filter(void);
 int xtcas_get_SL(void);
 
 void xtcas_test(void);
+bool_t xtcas_test_is_in_prog(void);
 
 #ifdef __cplusplus
 }

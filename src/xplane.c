@@ -45,7 +45,12 @@
 #include "snd_sys.h"
 #include "xtcas.h"
 #include "xplane.h"
+
+#if	VSI_DRAW_MODE
+#include "vsi.h"
+#else
 #include "xplane_test.h"
+#endif
 
 #define	FLOOP_INTVAL			0.1
 #define	POS_UPDATE_INTVAL		0.1
@@ -94,14 +99,19 @@ static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl,
     double *hdg);
 static void xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
 
-static int test_gui_handler(XPLMCommandRef, XPLMCommandPhase, void *);
 static int tcas_config_handler(XPLMCommandRef, XPLMCommandPhase, void *);
 
+#if	!VSI_DRAW_MODE
+static int test_gui_handler(XPLMCommandRef, XPLMCommandPhase, void *);
 static XPLMCommandRef show_test_gui_cmd;
 static XPLMCommandRef hide_test_gui_cmd;
-static XPLMCommandRef mode_stby_cmd, mode_taonly_cmd, mode_tara_cmd;
+
 static XPLMCommandRef filter_all_cmd, filter_thrt_cmd, filter_abv_cmd;
-static XPLMCommandRef filter_blw_cmd, tcas_test_cmd;
+static XPLMCommandRef filter_blw_cmd;
+#endif	/* !VSI_DRAW_MODE */
+
+static XPLMCommandRef mode_stby_cmd, mode_taonly_cmd, mode_tara_cmd;
+static XPLMCommandRef tcas_test_cmd;
 
 static const sim_intf_input_ops_t xp_intf_in_ops = {
 	.handle = NULL,
@@ -110,12 +120,23 @@ static const sim_intf_input_ops_t xp_intf_in_ops = {
 	.get_oth_acf_pos = xp_get_oth_acf_pos,
 };
 
+#if	VSI_DRAW_MODE
+static const sim_intf_output_ops_t vsi_out_ops = {
+	.handle = NULL,
+	.update_contact = vsi_update_contact,
+	.delete_contact = vsi_delete_contact,
+	.update_RA = vsi_update_RA,
+	.update_RA_prediction = NULL
+};
+#else	/* !VSI_DRAW_MODE */
 static const sim_intf_output_ops_t xplane_test_out_ops = {
 	.handle = NULL,
 	.update_contact = xplane_test_update_contact,
 	.delete_contact = xplane_test_delete_contact,
-	.update_RA = xplane_test_update_RA
+	.update_RA = xplane_test_update_RA,
+	.update_RA_prediction = NULL
 };
+#endif	/* !VSI_DRAW_MODE */
 
 static bool_t ff_a320_intf_inited = B_FALSE;
 
@@ -323,6 +344,9 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 			/* FF A320 integration mode */
 			ff_a320_intf_inited = B_TRUE;
 		} else {
+#if	VSI_DRAW_MODE
+			out_ops = &vsi_out_ops;
+#else	/* !VSI_DRAW_MODE */
 			/* Stand-alone mode */
 			out_ops = &xplane_test_out_ops;
 
@@ -331,13 +355,6 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 			XPLMRegisterCommandHandler(hide_test_gui_cmd,
 			    test_gui_handler, 1, NULL);
 
-			XPLMRegisterCommandHandler(mode_stby_cmd,
-			    tcas_config_handler, 1, NULL);
-			XPLMRegisterCommandHandler(mode_taonly_cmd,
-			    tcas_config_handler, 1, NULL);
-			XPLMRegisterCommandHandler(mode_tara_cmd,
-			    tcas_config_handler, 1, NULL);
-
 			XPLMRegisterCommandHandler(filter_all_cmd,
 			    tcas_config_handler, 1, NULL);
 			XPLMRegisterCommandHandler(filter_thrt_cmd,
@@ -345,6 +362,14 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 			XPLMRegisterCommandHandler(filter_abv_cmd,
 			    tcas_config_handler, 1, NULL);
 			XPLMRegisterCommandHandler(filter_blw_cmd,
+			    tcas_config_handler, 1, NULL);
+#endif	/* !VSI_DRAW_MODE */
+
+			XPLMRegisterCommandHandler(mode_stby_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMRegisterCommandHandler(mode_taonly_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMRegisterCommandHandler(mode_tara_cmd,
 			    tcas_config_handler, 1, NULL);
 		}
 
@@ -370,7 +395,11 @@ tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 	UNUSED(refcon);
 	if (phase != xplm_CommandEnd)
 		return (1);
-	if (ref == mode_stby_cmd) {
+
+	if (ref == tcas_test_cmd) {
+		logMsg("TCAS TEST STARTED");
+		xtcas_test();
+	} else if (ref == mode_stby_cmd) {
 		logMsg("TCAS MODE: STBY");
 		xtcas_set_mode(TCAS_MODE_STBY);
 	} else if (ref == mode_taonly_cmd) {
@@ -379,7 +408,9 @@ tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 	} else if (ref == mode_tara_cmd) {
 		logMsg("TCAS MODE: TA/RA");
 		xtcas_set_mode(TCAS_MODE_TARA);
-	} else if (ref == filter_all_cmd) {
+	}
+#if	!VSI_DRAW_MODE
+	else if (ref == filter_all_cmd) {
 		logMsg("TCAS FILTER: ALL");
 		xtcas_set_filter(TCAS_FILTER_ALL);
 	} else if (ref == filter_thrt_cmd) {
@@ -391,15 +422,15 @@ tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 	} else if (ref == filter_blw_cmd) {
 		logMsg("TCAS FILTER: BLW");
 		xtcas_set_filter(TCAS_FILTER_BLW);
-	} else if (ref == tcas_test_cmd) {
-		logMsg("TCAS TEST STARTED");
-		xtcas_test();
-	} else {
+	}
+#endif	/* !VSI_DRAW_MODE */
+	else {
 		VERIFY_MSG(0, "Unknown command %p received", ref);
 	}
 	return (1);
 }
 
+#if	!VSI_DRAW_MODE
 static int
 test_gui_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 {
@@ -414,6 +445,7 @@ test_gui_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 	}
 	return (1);
 }
+#endif	/* !VSI_DRAW_MODE */
 
 static void
 config_load(void)
@@ -501,17 +533,11 @@ XPluginStart(char *name, char *sig, char *desc)
 	}
 	free(snd_dir);
 
+#if	!VSI_DRAW_MODE
 	show_test_gui_cmd = XPLMCreateCommand("X-TCAS/show_debug_gui",
 	    "Show debugging interface");
 	hide_test_gui_cmd = XPLMCreateCommand("X-TCAS/hide_debug_gui",
 	    "Hide debugging interface");
-
-	mode_stby_cmd = XPLMCreateCommand("X-TCAS/mode_stby",
-	    "Set TCAS mode to STANDBY");
-	mode_taonly_cmd = XPLMCreateCommand("X-TCAS/mode_taonly",
-	    "Set TCAS mode to TA-ONLY");
-	mode_tara_cmd = XPLMCreateCommand("X-TCAS/mode_tara",
-	    "Set TCAS mode to TA/RA");
 
 	filter_all_cmd = XPLMCreateCommand("X-TCAS/filter_all",
 	    "Set TCAS display filter to ALL");
@@ -521,6 +547,14 @@ XPluginStart(char *name, char *sig, char *desc)
 	    "Set TCAS display filter to ABOVE");
 	filter_blw_cmd = XPLMCreateCommand("X-TCAS/filter_blw",
 	    "Set TCAS display filter to BELOW");
+#endif	/* !VSI_DRAW_MODE */
+
+	mode_stby_cmd = XPLMCreateCommand("X-TCAS/mode_stby",
+	    "Set TCAS mode to STANDBY");
+	mode_taonly_cmd = XPLMCreateCommand("X-TCAS/mode_taonly",
+	    "Set TCAS mode to TA-ONLY");
+	mode_tara_cmd = XPLMCreateCommand("X-TCAS/mode_tara",
+	    "Set TCAS mode to TA/RA");
 
 	tcas_test_cmd = XPLMCreateCommand("X-TCAS/test", "Perform TCAS test");
 	ASSERT(tcas_test_cmd != NULL);
@@ -540,10 +574,18 @@ PLUGIN_API int
 XPluginEnable(void)
 {
 	config_load();
+
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
 	XPLMRegisterDrawCallback(acf_pos_collector,
 	    xplm_Phase_Airplanes, 0, NULL);
 	first_sim_time = NAN;
+
+#if	VSI_DRAW_MODE
+	if (!vsi_init(plugindir)) {
+		XPluginDisable();
+		return (0);
+	}
+#endif	/* VSI_DRAW_MODE */
 
 	return (1);
 }
@@ -551,6 +593,10 @@ XPluginEnable(void)
 PLUGIN_API void
 XPluginDisable(void)
 {
+#if	VSI_DRAW_MODE
+	vsi_fini();
+#endif
+
 	if (xtcas_inited) {
 		xtcas_fini();
 
@@ -559,18 +605,12 @@ XPluginDisable(void)
 			ff_a320_intf_fini();
 			ff_a320_intf_inited = B_FALSE;
 		} else {
+#if !VSI_DRAW_MODE
 			/* Stand-alone mode */
 			XPLMUnregisterCommandHandler(show_test_gui_cmd,
 			    test_gui_handler, 1, NULL);
 			XPLMUnregisterCommandHandler(hide_test_gui_cmd,
 			    test_gui_handler, 1, NULL);
-
-			XPLMUnregisterCommandHandler(mode_stby_cmd,
-			    tcas_config_handler, 1, NULL);
-			XPLMUnregisterCommandHandler(mode_taonly_cmd,
-			    tcas_config_handler, 1, NULL);
-			XPLMUnregisterCommandHandler(mode_tara_cmd,
-			    tcas_config_handler, 1, NULL);
 
 			XPLMUnregisterCommandHandler(filter_all_cmd,
 			    tcas_config_handler, 1, NULL);
@@ -579,6 +619,14 @@ XPluginDisable(void)
 			XPLMUnregisterCommandHandler(filter_abv_cmd,
 			    tcas_config_handler, 1, NULL);
 			XPLMUnregisterCommandHandler(filter_blw_cmd,
+			    tcas_config_handler, 1, NULL);
+#endif	/* !VSI_DRAW_MODE */
+
+			XPLMUnregisterCommandHandler(mode_stby_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(mode_taonly_cmd,
+			    tcas_config_handler, 1, NULL);
+			XPLMUnregisterCommandHandler(mode_tara_cmd,
 			    tcas_config_handler, 1, NULL);
 
 			XPLMUnregisterCommandHandler(tcas_test_cmd,

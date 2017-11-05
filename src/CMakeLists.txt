@@ -19,6 +19,11 @@ project(xtcas C)
 SET(SRC SL.c dbg_log.c pos.c xtcas.c snd_sys.c)
 SET(HDR SL.h dbg_log.h pos.h xtcas.h snd_sys.h)
 
+execute_process(COMMAND git rev-parse --short HEAD OUTPUT_VARIABLE XTCAS_VER)
+string(REGEX REPLACE "\n$" "" XTCAS_VER "${XTCAS_VER}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DXTCAS_VER=0x${XTCAS_VER}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DVSI_DRAW_MODE=${VSI_DRAW_MODE}")
+
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELEASE} -DDEBUG")
 SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG -O0")
 
@@ -27,8 +32,19 @@ if("${TEST_STANDALONE_BUILD}" EQUAL "1")
 	LIST(APPEND SRC test.c)
 	LIST(APPEND HDR test.h)
 else()
-	LIST(APPEND SRC xplane.c xplane_test.c ff_a320_intf.c)
-	LIST(APPEND HDR xplane.h xplane_test.h ff_a320_intf.h)
+	LIST(APPEND SRC xplane.c xplane_test.c ff_a320_intf.c vsi.c)
+	LIST(APPEND HDR xplane.h xplane_test.h ff_a320_intf.h vsi.h)
+	if(APPLE)
+		execute_process(COMMAND
+		    ${LIBACFUTILS}/pkg-config-deps mac-64 --cflags
+		    OUTPUT_VARIABLE DEP_CFLAGS)
+	else()
+		execute_process(COMMAND
+		    ${LIBACFUTILS}/pkg-config-deps linux-64 --cflags
+		    OUTPUT_VARIABLE DEP_CFLAGS)
+	endif()
+	string(REGEX REPLACE "\n$" "" DEP_CFLAGS "${DEP_CFLAGS}")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${DEP_CFLAGS}")
 endif()
 
 SET(ALL_SRC ${SRC} ${HDR})
@@ -86,7 +102,12 @@ if(APPLE)
 	    ${LIBACFUTILS}/qmake/mac64
 	    ${LIBACFUTILS}/opus/opusfile-mac-64/lib
 	    ${LIBACFUTILS}/opus/opus-mac-64/lib
-	    ${LIBACFUTILS}/opus/libogg-mac-64/install/lib)
+	    ${LIBACFUTILS}/opus/libogg-mac-64/install/lib
+	    ${LIBACFUTILS}/freetype/freetype-mac-64/lib
+	    ${LIBACFUTILS}/cairo/pixman-mac-64/lib
+	    ${LIBACFUTILS}/cairo/cairo-mac-64/lib
+	    ${LIBACFUTILS}/zlib/zlib-mac-64/lib
+	    ${LIBACFUTILS}/libpng/libpng-mac-64/lib)
 	FIND_LIBRARY(XPLM_LIBRARY XPLM ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(XPWIDGETS_LIBRARY XPWidgets ../SDK/Libraries/Mac/)
 	FIND_LIBRARY(OPENAL_LIBRARY OpenAL)
@@ -100,7 +121,12 @@ if(APPLE)
 	    ${OPUSFILE_LIBRARY}
 	    ${OPUS_LIBRARY}
 	    ${OGG_LIBRARY}
-	    ${OPENAL_LIBRARY})
+	    ${OPENAL_LIBRARY}
+	    ${CAIRO_LIBRARY}
+	    ${PIXMAN_LIBRARY}
+	    ${FREETYPE_LIBRARY}
+	    ${LIBPNG_LIBRARY}
+	    ${ZLIB_LIBRARY})
 	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
 		target_link_libraries(xtcas ${CURSES_LIBRARY})
 	else()
@@ -112,7 +138,12 @@ else()
 	    ${LIBACFUTILS}/qmake/lin64
 	    ${LIBACFUTILS}/opus/opusfile-linux-64/lib
 	    ${LIBACFUTILS}/opus/opus-linux-64/lib
-	    ${LIBACFUTILS}/opus/libogg-linux-64/install/lib)
+	    ${LIBACFUTILS}/opus/libogg-linux-64/install/lib
+	    ${LIBACFUTILS}/freetype/freetype-linux-64/lib
+	    ${LIBACFUTILS}/cairo/pixman-linux-64/lib
+	    ${LIBACFUTILS}/cairo/cairo-linux-64/lib
+	    ${LIBACFUTILS}/zlib/zlib-linux-64/lib
+	    ${LIBACFUTILS}/libpng/libpng-linux-64/lib)
 
 	INCLUDE(FindPkgConfig)
 	pkg_check_modules(OPENAL REQUIRED openal)
@@ -129,6 +160,13 @@ else()
 	    ${OPUSFILE_LIBRARY}
 	    ${OPUS_LIBRARY}
 	    ${OGG_LIBRARY}
+	    ${CAIRO_LIBRARY}
+	    ${PIXMAN_LIBRARY}
+	    ${FREETYPE_LIBRARY}
+	    ${LIBPNG_LIBRARY}
+	    ${ZLIB_LIBRARY}
+	    ${PTHREAD_NONSHARED}
+	    ${LIBC_NONSHARED}
 	    )
 	if("${TEST_STANDALONE_BUILD}" EQUAL "1")
 		target_link_libraries(xtcas
