@@ -40,6 +40,9 @@ PLUGIN_API int XPluginEnable(void);
 PLUGIN_API void XPluginDisable(void);
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID from, int msg, void *param);
 
+bool_t xtcas_is_powered(void);
+bool_t xtcas_is_failed(void);
+
 #ifdef __cplusplus
 }
 #endif

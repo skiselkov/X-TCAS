@@ -42,9 +42,10 @@
 #include <acfutils/time.h>
 
 #include "vsi.h"
+#include "xplane.h"
 
 #define	VSI_STYLE_ATR		1
-#define	VSI_STYLE_BENDIX_KING	2
+#define	VSI_STYLE_HONEYWELL	2
 
 #ifndef	VSI_STYLE
 #define	VSI_STYLE	VSI_STYLE_ATR
@@ -55,30 +56,20 @@
 #define	VSI_RING_DELAY		4
 #define	VSI_IND_DELAY		6
 #define	VSI_TCAS_DELAY		8
-
 #define	MIN_VOLTS		22
 #define	MAX_BUSNR		6
 #define	BRT_DFL			50
 
 #define	X(x)	((x) * tex->sz)
 
-typedef enum {
-	VSI_SCALE_1,
-	VSI_SCALE_2,
-	VSI_SCALE_3,
-	VSI_SCALE_4,
-#if	VSI_STYLE == VSI_STYLE_ATR
-	VSI_SCALE_5,
-#endif
-	VSI_NUM_SCALES
-} vsi_scale_t;
-#define	VSI_SCALE_DFL	VSI_SCALE_2
+#define	VSI_NUM_SCALES	5
+#define	VSI_SCALE_DFL	1
 
 #if	VSI_STYLE == VSI_STYLE_ATR
 static int vsi_scales[VSI_NUM_SCALES] = { 3, 6, 12, 24, 48 };
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
-static int vsi_scales[VSI_NUM_SCALES] = { 5, 10, 20, 40 };
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
+static int vsi_scales[VSI_NUM_SCALES] = { 3, 5, 10, 20, 40 };
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 #define	DRAW_INTVAL		50000	/* microseconds = 20 fps */
 #define	MAX_SZ			2048	/* pixels */
@@ -236,9 +227,9 @@ static vsi_range_t vsi_ranges[] = {
 	.label = "6",
 #if	VSI_STYLE == VSI_STYLE_ATR
 	.major_len = 0.04,
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	.major_len = 0.08,
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	.minor_len = 0.05,
 	.major_thickness = 0.015, .minor_thickness = 0.01, .step = 500,
 	.text_off = VECT2(0.075, 0.01), .font_sz = 0.085
@@ -252,13 +243,7 @@ static bool_t inited = B_FALSE;
 static mutex_t ctc_lock;
 static avl_tree_t ctcs;
 static dr_t bus_volts;
-
-static int xpdr_busnr = 0;
-static dr_t xpdr_busnr_dr;
-static dr_t xpdr_fail;
-static dr_t xpdr_mode;
 static bool_t xpdr_functional = B_FALSE;
-static bool_t xpdr_stby = B_FALSE;
 
 static FT_Library ft = NULL;
 static FT_Face font = NULL;
@@ -375,11 +360,11 @@ draw_ranges(vsi_t *vsi, vsi_tex_t *tex)
 		}
 	}
 
-#if	VSI_STYLE == VSI_STYLE_BENDIX_KING
+#if	VSI_STYLE == VSI_STYLE_HONEYWELL
 	cairo_set_line_width(tex->cr, X(0.005));
 	cairo_arc(tex->cr, 0, 0, X(VSI_RING_RADIUS), 0, DEG2RAD(360));
 	cairo_stroke(tex->cr);
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 	for (int i = 0; i < NUM_VSI_RANGES; i++) {
 		vsi_range_t *r = &vsi_ranges[i];
@@ -393,7 +378,7 @@ draw_ranges(vsi_t *vsi, vsi_tex_t *tex)
 		cairo_set_font_size(tex->cr, round(X(r->font_sz)));
 		cairo_text_extents(tex->cr, r->label, &te);
 
-#if	VSI_STYLE == VSI_STYLE_BENDIX_KING
+#if	VSI_STYLE == VSI_STYLE_HONEYWELL
 		if (strcmp(r->label, "6") == 0) {
 			cairo_move_to(tex->cr,
 			    X(VSI_RING_RADIUS + r->major_len) - te.width / 2 -
@@ -401,7 +386,7 @@ draw_ranges(vsi_t *vsi, vsi_tex_t *tex)
 			cairo_show_text(tex->cr, r->label);
 			continue;
 		}
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 		v = vect2_rot(v, r->top_angle);
 		cairo_move_to(tex->cr,
@@ -442,9 +427,9 @@ draw_needle(vsi_t *vsi, vsi_tex_t *tex)
 #define	NEEDLE_LENGTH		0.39
 #if	VSI_STYLE == VSI_STYLE_ATR
 #define	NEEDLE_HEAD_LENGTH	0.05
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 #define	NEEDLE_HEAD_LENGTH	0.09
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 	double angle = find_vs_angle(FPM2MPS(vsi->vs_value));
 
@@ -501,8 +486,13 @@ scale_ctc(vsi_t *vsi, vect2_t xy, bool_t clamp)
 #define	CENTER_Y_OFF	(VSI_RING_RADIUS * 0.3333333)
 	xy = vect2_scmul(xy, (1.0 / NM2MET(2 * scale)) * 2 * VSI_RING_RADIUS);
 	xy.y = -xy.y + CENTER_Y_OFF;
-	if (clamp && vect2_abs(xy) > ABS(VSI_CTC_RADIUS))
-		xy = vect2_set_abs(xy, VSI_CTC_RADIUS);
+	/*
+	 * We clamp contacts a little closer than VSI_CTC_RADIUS, since that
+	 * is also used for the clip arc. We want just a little more than
+	 * half the aircraft symbol sticking out from that arc.
+	 */
+	if (clamp && vect2_abs(xy) > ABS(VSI_CTC_RADIUS) * 0.99)
+		xy = vect2_set_abs(xy, VSI_CTC_RADIUS * 0.99);
 
 	return (xy);
 }
@@ -513,14 +503,12 @@ draw_own_acf(vsi_t *vsi, vsi_tex_t *tex)
 #if	VSI_STYLE == VSI_STYLE_ATR
 #define	OWN_ACF_SYM_SIZE	0.05
 #define	OWN_ACF_SYM_THICKNESS	0.01
-#define	OWN_ACF_RING_THICKNESS	0.005
 	set_color(vsi, tex, 1, 1, 1);
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 #define	OWN_ACF_SYM_SIZE	0.04
 #define	OWN_ACF_SYM_THICKNESS	0.005
-#define	OWN_ACF_RING_DOT_SZ	0.005
 	set_color(vsi, tex, CYAN_RGB);
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	vect2_t v = scale_ctc(vsi, ZERO_VECT2, B_FALSE);
 
 	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY)
@@ -532,17 +520,17 @@ draw_own_acf(vsi_t *vsi, vsi_tex_t *tex)
 	cairo_move_to(tex->cr, X(v.x), X(v.y));
 	cairo_rel_move_to(tex->cr, 0, X(-OWN_ACF_SYM_SIZE * 0.25));
 	cairo_rel_line_to(tex->cr, 0, X(OWN_ACF_SYM_SIZE));
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	cairo_move_to(tex->cr, X(v.x), X(v.y));
 	cairo_rel_move_to(tex->cr, 0, X(-OWN_ACF_SYM_SIZE * 0.35));
 	cairo_rel_line_to(tex->cr, 0, X(OWN_ACF_SYM_SIZE));
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 #if	VSI_STYLE == VSI_STYLE_ATR
 	cairo_move_to(tex->cr, X(v.x), X(v.y));
 	cairo_rel_move_to(tex->cr, X(-OWN_ACF_SYM_SIZE * 0.5), 0);
 	cairo_rel_line_to(tex->cr, X(OWN_ACF_SYM_SIZE), 0);
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	cairo_move_to(tex->cr, X(v.x), X(v.y));
 	cairo_rel_move_to(tex->cr, X(-OWN_ACF_SYM_SIZE * 0.5),
 	    X(OWN_ACF_SYM_SIZE * 0.2));
@@ -550,19 +538,31 @@ draw_own_acf(vsi_t *vsi, vsi_tex_t *tex)
 	    X(-OWN_ACF_SYM_SIZE * 0.2));
 	cairo_rel_line_to(tex->cr, X(OWN_ACF_SYM_SIZE / 2),
 	    X(OWN_ACF_SYM_SIZE * 0.2));
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 	cairo_move_to(tex->cr, X(v.x), X(v.y));
 #if	VSI_STYLE == VSI_STYLE_ATR
 	cairo_rel_move_to(tex->cr, X(-OWN_ACF_SYM_SIZE * 0.25),
 	    X(OWN_ACF_SYM_SIZE * 0.75));
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	cairo_rel_move_to(tex->cr, X(-OWN_ACF_SYM_SIZE * 0.25),
 	    X(OWN_ACF_SYM_SIZE * 0.6));
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	cairo_rel_line_to(tex->cr, X(OWN_ACF_SYM_SIZE * 0.5), 0);
 
 	cairo_stroke(tex->cr);
+}
+
+static void
+draw_own_acf_ring(vsi_t *vsi, vsi_tex_t *tex)
+{
+#if	VSI_STYLE == VSI_STYLE_ATR
+#define	OWN_ACF_RING_THICKNESS	0.005
+	set_color(vsi, tex, 1, 1, 1);
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
+#define	OWN_ACF_RING_DOT_SZ	0.005
+	set_color(vsi, tex, CYAN_RGB);
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 	cairo_arc(tex->cr, 0, 0, X(VSI_CTC_RADIUS), 0, DEG2RAD(360));
 	cairo_clip(tex->cr);
@@ -577,11 +577,11 @@ draw_own_acf(vsi_t *vsi, vsi_tex_t *tex)
 
 		cairo_move_to(tex->cr, X(p1.x), X(p1.y));
 		cairo_line_to(tex->cr, X(p2.x), X(p2.y));
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 		cairo_arc(tex->cr, X(p1.x), X(p1.y), X(OWN_ACF_RING_DOT_SZ),
 		    0, DEG2RAD(360));
 		cairo_fill(tex->cr);
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 	}
 #if	VSI_STYLE == VSI_STYLE_ATR
 	cairo_stroke(tex->cr);
@@ -601,7 +601,7 @@ draw_contacts(vsi_t *vsi, vsi_tex_t *tex)
 
 	cairo_set_line_width(tex->cr, X(0.006));
 	cairo_set_font_face(tex->cr, cr_font);
-	cairo_set_font_size(tex->cr, round(X(CTC_SZ)));
+	cairo_set_font_size(tex->cr, round(X(CTC_SZ * 1.2)));
 
 	cairo_arc(tex->cr, 0, 0, X(VSI_CTC_RADIUS), 0, DEG2RAD(360));
 	cairo_clip(tex->cr);
@@ -619,7 +619,7 @@ draw_contacts(vsi_t *vsi, vsi_tex_t *tex)
 		case PROX_THREAT:
 #if	VSI_STYLE == VSI_STYLE_ATR
 			set_color(vsi, tex, CYAN_RGB);
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 			set_color(vsi, tex, 1, 1, 1);
 #endif
 			cairo_move_to(tex->cr, X(p.x), X(p.y));
@@ -708,13 +708,13 @@ draw_band(vsi_t *vsi, vsi_tex_t *tex, double vs_lo, double vs_hi,
 	    DEG2RAD(a2), DEG2RAD(a1));
 	cairo_fill(tex->cr);
 
-#if	VSI_STYLE == VSI_STYLE_BENDIX_KING
+#if	VSI_STYLE == VSI_STYLE_HONEYWELL
 	cairo_set_line_width(tex->cr, X(0.005));
 	set_color(vsi, tex, 1, 1, 1);
 	cairo_arc_negative(tex->cr, 0, 0, X(VSI_RING_RADIUS + thickness),
 	    DEG2RAD(a2), DEG2RAD(a1));
 	cairo_stroke(tex->cr);
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 }
 
 static void
@@ -723,10 +723,10 @@ draw_color_bands(vsi_t *vsi, vsi_tex_t *tex)
 #if	VSI_STYLE == VSI_STYLE_ATR
 #define	RED_BAND_THICKNESS 0.08
 #define	GREEN_BAND_THICKNESS 0.04
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 #define	RED_BAND_THICKNESS 0.04
-#define	GREEN_BAND_THICKNESS 0.06
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#define	GREEN_BAND_THICKNESS 0.05
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 
 	vsi_state_t st;
 
@@ -773,11 +773,11 @@ draw_mode(vsi_t *vsi, vsi_tex_t *tex)
 	cairo_text_extents_t te;
 
 	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY ||
-	    (!xpdr_functional && !xpdr_stby))
+	    !xpdr_functional)
 		msg = "TCAS FAIL";
 	else if (xtcas_test_is_in_prog())
 		msg = "TEST";
-	else if (mode == TCAS_MODE_STBY || xpdr_stby)
+	else if (mode == TCAS_MODE_STBY)
 		msg = "TCAS OFF";
 	else if (mode == TCAS_MODE_TAONLY)
 		msg = "TA ONLY";
@@ -798,7 +798,7 @@ draw_mode(vsi_t *vsi, vsi_tex_t *tex)
 	cairo_move_to(tex->cr, X(0.5 - MSG_X_OFF) - te.width - te.x_bearing,
 	    -te.height / 2 - te.y_bearing);
 	cairo_show_text(tex->cr, msg);
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 #define	MODE_MSG_SZ	0.06
 #define	MSG_X_OFF	-0.48
 #define	MSG_Y_OFF	0.38
@@ -806,13 +806,13 @@ draw_mode(vsi_t *vsi, vsi_tex_t *tex)
 	tcas_mode_t mode = xtcas_get_mode();
 
 	if (USEC2SEC(microclock() - vsi->start_time) < VSI_TCAS_DELAY ||
-	    (!xpdr_functional && !xpdr_stby)) {
+	    !xpdr_functional) {
 		set_color(vsi, tex, 1, 1, 0);
 		msgs[0] = "NO TCAS";
 	} else if (xtcas_test_is_in_prog()) {
 		set_color(vsi, tex, 1, 1, 0);
 		msgs[0] = "     TEST";
-	} else if (mode == TCAS_MODE_STBY || xpdr_stby) {
+	} else if (mode == TCAS_MODE_STBY) {
 		set_color(vsi, tex, CYAN_RGB);
 		msgs[0] = "     TCAS";
 		msgs[1] = "     STBY";
@@ -839,7 +839,7 @@ draw_mode(vsi_t *vsi, vsi_tex_t *tex)
 		cairo_show_text(tex->cr, msgs[i]);
 	}
 
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 }
 
 static void
@@ -847,14 +847,14 @@ draw_scale(vsi_t *vsi, vsi_tex_t *tex)
 {
 #if	VSI_STYLE == VSI_STYLE_ATR
 #define	BOX_X_OFF		0.315
-#define	BOX_Y_OFF		-0.47
-#define	BOX_X_SZ		.075
+#define	BOX_Y_OFF		-0.46
+#define	BOX_X_SZ		.07
 #define	BOX_Y_SZ		.11
 #define	BOX_LINE_WIDTH		0.005
 #define	SCALE_MSG_SZ		0.065
 #define	SCALE_MSG_X_OFF		(BOX_X_OFF + BOX_X_SZ / 2)
 #define	SCALE_MSG_Y_OFF		(BOX_Y_OFF + SCALE_MSG_SZ / 2)
-#define	SCALE_UNIT_SZ		0.045
+#define	SCALE_UNIT_SZ		0.04
 #define	SCALE_UNIT_X_OFF	(BOX_X_OFF + BOX_X_SZ / 2)
 #define	SCALE_UNIT_Y_OFF	(BOX_Y_OFF + SCALE_MSG_SZ + SCALE_UNIT_SZ / 2)
 	char msg[8];
@@ -886,7 +886,7 @@ draw_scale(vsi_t *vsi, vsi_tex_t *tex)
 	    X(SCALE_UNIT_X_OFF) - te.width / 2 - te.x_bearing,
 	    X(SCALE_UNIT_Y_OFF) - te.height / 2 - te.y_bearing);
 	cairo_show_text(tex->cr, "NM");
-#else	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#else	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 #define	SCALE_X_OFF		0.22
 #define	SCALE_Y_OFF		-0.45
 #define	SCALE_MSG_SZ		0.07
@@ -903,7 +903,7 @@ draw_scale(vsi_t *vsi, vsi_tex_t *tex)
 	cairo_move_to(tex->cr, X(SCALE_X_OFF),
 	    X(SCALE_Y_OFF) - te.height / 2 - te.y_bearing);
 	cairo_show_text(tex->cr, msg);
-#endif	/* VSI_STYLE == VSI_STYLE_BENDIX_KING */
+#endif	/* VSI_STYLE == VSI_STYLE_HONEYWELL */
 }
 
 static void
@@ -938,6 +938,7 @@ vsi_draw(vsi_t *vsi, vsi_tex_t *tex)
 
 	draw_color_bands(vsi, tex);
 	draw_ranges(vsi, tex);
+	draw_own_acf_ring(vsi, tex);
 	draw_needle(vsi, tex);
 	draw_contacts(vsi, tex);
 	draw_own_acf(vsi, tex);
@@ -1089,23 +1090,11 @@ vsi_drs_update(vsi_t *vsi)
 static int
 draw_vsis(XPLMDrawingPhase phase, int before, void *refcon)
 {
-	bool_t xpdr_powered = B_TRUE;
-
 	UNUSED(phase);
 	UNUSED(before);
 	UNUSED(refcon);
 
-	if (xpdr_busnr >= 0 && xpdr_busnr < MAX_BUSNR) {
-		double volts;
-
-		VERIFY3S(dr_getvf(&bus_volts, &volts, xpdr_busnr, 1), ==, 1);
-		xpdr_powered = (volts >= MIN_VOLTS);
-	}
-
-	xpdr_stby = (dr_geti(&xpdr_mode) == 1 && xpdr_powered &&
-	    dr_geti(&xpdr_fail) != 6);
-	xpdr_functional = (dr_geti(&xpdr_mode) >= 2 && xpdr_powered &&
-	    dr_geti(&xpdr_fail) != 6);
+	xpdr_functional = (xtcas_is_powered() && !xtcas_is_failed());
 
 	for (int i = 0; i < MAX_VSIS; i++) {
 		vsi_t *vsi = &vsis[i];
@@ -1229,10 +1218,6 @@ vsi_init(const char *plugindir)
 	    sizeof (vsis[3].fail_dr_name));
 
 	fdr_find(&bus_volts, "sim/cockpit2/electrical/bus_volts");
-	fdr_find(&xpdr_fail, "sim/operation/failures/rel_xpndr");
-	fdr_find(&xpdr_mode, "sim/cockpit2/radios/actuators/transponder_mode");
-	dr_create_i(&xpdr_busnr_dr, &xpdr_busnr, B_TRUE,
-	    "xtcas/vsis/xpdr_busnr");
 
 	if ((err = FT_Init_FreeType(&ft)) != 0) {
 		logMsg("Error initializing FreeType library: %s",
@@ -1285,8 +1270,6 @@ vsi_fini(void)
 		cv_destroy(&vsis[i].cv);
 		mutex_destroy(&vsis[i].state_lock);
 	}
-
-	dr_delete(&xpdr_busnr_dr);
 
 	while ((ctc = avl_destroy_nodes(&ctcs, &cookie)) != NULL)
 		free(ctc);

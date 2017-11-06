@@ -63,6 +63,10 @@
 #define	MAX_MP_PLANES	19
 #define	MAX_DR_NAME_LEN	256
 
+#define	BUSNR_DFL	0
+#define	BUSNR_MAX	6
+#define	MIN_VOLTS_DFL	22
+
 static bool_t intf_inited = B_FALSE;
 static bool_t xtcas_inited = B_FALSE;
 static struct {
@@ -75,6 +79,18 @@ static struct {
 	dr_t	view_is_ext;
 	dr_t	warn_volume;
 	dr_t	sound_on;
+	dr_t	bus_volts;
+	dr_t	xpdr_mode;
+	dr_t	xpdr_fail;
+	dr_t	altm_fail;
+	dr_t	adc_fail;
+
+	/* our datarefs */
+	dr_t	busnr;
+	dr_t	min_volts;
+	dr_t	mode_req;
+	dr_t	mode_act;
+	dr_t	fail_dr_name_dr;
 } drs;
 
 static struct {
@@ -93,6 +109,12 @@ static double cur_sim_time = 0;
 static double first_sim_time = 0;
 
 static char plugindir[512] = { 0 };
+
+static int busnr = BUSNR_DFL;
+static float min_volts = MIN_VOLTS_DFL;
+static int mode_req = -1;
+static int mode_act = -1;
+static char fail_dr_name[128] = { 0 };
 
 static double xp_get_time(void *handle);
 static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl,
@@ -378,15 +400,55 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 
 		xtcas_init(&xp_intf_in_ops, out_ops);
 		xtcas_inited = B_TRUE;
-	} else {
+	} else if (xtcas_is_powered() && !xtcas_is_failed() &&
+	    mode_req >= TCAS_MODE_STBY && mode_req <= TCAS_MODE_TARA) {
+		xtcas_set_mode(mode_req);
+		mode_act = mode_req;
 		xtcas_run();
+		xtcas_snd_sys_run(volume);
+		if (ff_a320_intf_inited)
+			ff_a320_intf_update();
+	} else {
+		xtcas_set_mode(TCAS_MODE_STBY);
+		mode_act = TCAS_MODE_STBY;
 		xtcas_snd_sys_run(volume);
 	}
 
-	if (ff_a320_intf_inited)
-		ff_a320_intf_update();
-
 	return (-1.0);
+}
+
+bool_t
+xtcas_is_powered(void)
+{
+#if	VSI_DRAW_MODE
+	bool_t powered = B_TRUE;
+
+	if (dr_geti(&drs.xpdr_mode) == 0) {
+		powered = B_FALSE;
+	} else if (min_volts > 0 && busnr >= 0 && busnr < BUSNR_MAX) {
+		double volts;
+		VERIFY3S(dr_getvf(&drs.bus_volts, &volts, busnr, 1), ==, 1);
+		powered = (volts >= min_volts);
+	}
+
+	return (powered);
+#else	/* !VSI_DRAW_MODE */
+	return (B_TRUE);
+#endif
+}
+
+bool_t
+xtcas_is_failed(void)
+{
+	dr_t dr;
+
+	if (strcmp(fail_dr_name, "") != 0 && dr_find(&dr, "%s", fail_dr_name)) {
+		return (dr_geti(&dr) == 6);
+	} else {
+		return (dr_geti(&drs.xpdr_fail) == 6 ||
+		    dr_geti(&drs.altm_fail) == 6 ||
+		    dr_geti(&drs.adc_fail) == 6);
+	}
 }
 
 static int
@@ -398,13 +460,13 @@ tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 
 	if (ref == tcas_test_cmd) {
 #if	VSI_DRAW_MODE
-		dr_t xpdr_fail, xpdr_mode;
-
-		fdr_find(&xpdr_fail, "sim/operation/failures/rel_xpndr");
-		fdr_find(&xpdr_mode, "sim/cockpit/radios/transponder_mode");
-		if (dr_geti(&xpdr_mode) == 0)
+		if (!xtcas_is_powered()) {
+			logMsg("Cannot perform TCAS test: transponder is OFF");
 			return (1);
-		if (dr_geti(&xpdr_fail) == 6) {
+		}
+		if (xtcas_is_failed()) {
+			logMsg("Cannot perform TCAS test: "
+			    "transponder has failed");
 			xtcas_test(B_TRUE);
 			return (1);
 		}
@@ -417,13 +479,13 @@ tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 		}
 	} else if (ref == mode_stby_cmd) {
 		logMsg("TCAS MODE: STBY");
-		xtcas_set_mode(TCAS_MODE_STBY);
+		mode_req = TCAS_MODE_STBY;
 	} else if (ref == mode_taonly_cmd) {
 		logMsg("TCAS MODE: TA-ONLY");
-		xtcas_set_mode(TCAS_MODE_TAONLY);
+		mode_req = TCAS_MODE_TAONLY;
 	} else if (ref == mode_tara_cmd) {
 		logMsg("TCAS MODE: TA/RA");
-		xtcas_set_mode(TCAS_MODE_TARA);
+		mode_req = TCAS_MODE_TARA;
 	}
 #if	!VSI_DRAW_MODE
 	else if (ref == filter_all_cmd) {
@@ -596,6 +658,21 @@ XPluginEnable(void)
 	    xplm_Phase_Airplanes, 0, NULL);
 	first_sim_time = NAN;
 
+	dr_create_i(&drs.busnr, &busnr, B_TRUE, "xtcas/busnr");
+	dr_create_f(&drs.min_volts, &min_volts, B_TRUE, "xtcas/min_volts");
+	dr_create_i(&drs.mode_req, &mode_req, B_TRUE, "xtcas/mode_req");
+	dr_create_i(&drs.mode_act, &mode_act, B_TRUE, "xtcas/mode_act");
+	dr_create_b(&drs.fail_dr_name_dr, fail_dr_name, sizeof (fail_dr_name),
+	    B_TRUE, "xtcas/fail_dr_name");
+
+	fdr_find(&drs.xpdr_mode, "sim/cockpit/radios/transponder_mode");
+	fdr_find(&drs.bus_volts, "sim/cockpit2/electrical/bus_volts");
+	fdr_find(&drs.xpdr_mode,
+	    "sim/cockpit2/radios/actuators/transponder_mode");
+	fdr_find(&drs.xpdr_fail, "sim/operation/failures/rel_xpndr");
+	fdr_find(&drs.altm_fail, "sim/operation/failures/rel_g_alt");
+	fdr_find(&drs.adc_fail, "sim/operation/failures/rel_adc_comp");
+
 #if	VSI_DRAW_MODE
 	if (!vsi_init(plugindir)) {
 		XPluginDisable();
@@ -612,6 +689,12 @@ XPluginDisable(void)
 #if	VSI_DRAW_MODE
 	vsi_fini();
 #endif
+
+	dr_delete(&drs.busnr);
+	dr_delete(&drs.min_volts);
+	dr_delete(&drs.mode_req);
+	dr_delete(&drs.mode_act);
+	dr_delete(&drs.fail_dr_name_dr);
 
 	if (xtcas_inited) {
 		xtcas_fini();
