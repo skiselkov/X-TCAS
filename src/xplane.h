@@ -24,6 +24,7 @@
 #include <XPLMDefs.h>
 
 #include <acfutils/avl.h>
+#include <acfutils/conf.h>
 #include <acfutils/geom.h>
 #include <acfutils/list.h>
 
@@ -39,6 +40,8 @@ PLUGIN_API void XPluginStop(void);
 PLUGIN_API int XPluginEnable(void);
 PLUGIN_API void XPluginDisable(void);
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID from, int msg, void *param);
+
+extern const conf_t *xtcas_conf;
 
 bool_t xtcas_is_powered(void);
 bool_t xtcas_is_failed(void);

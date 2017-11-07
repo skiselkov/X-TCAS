@@ -389,8 +389,10 @@ ff_a320_update(double step, void *tag)
 	/* State input */
 	mode = gets32(ids.mode);
 	if (mode != xtcas_get_mode()) {
-		dbg_log(ff_a320, 1, "xtcas_set_mode:%d", mode);
-		xtcas_set_mode(mode);
+		dr_t dr;
+		fdr_find(&dr, "xtcas/mode_req");
+		dr_seti(&dr, mode);
+		dbg_log(ff_a320, 1, "set_mode:%d", mode);
 	}
 	switch (gets32(ids.filter)) {
 	case 0:
@@ -407,8 +409,10 @@ ff_a320_update(double step, void *tag)
 		break;
 	}
 	if (filter != xtcas_get_filter()) {
-		dbg_log(ff_a320, 1, "xtcas_set_filter:%d", filter);
-		xtcas_set_filter(filter);
+		dr_t dr;
+		fdr_find(&dr, "xtcas/filter_req");
+		dr_seti(&dr, filter);
+		dbg_log(ff_a320, 1, "set_filter:%d", filter);
 	}
 
 	if (gets32(ids.cancel) != 0 && xtcas_msg_is_playing()) {

@@ -31,7 +31,6 @@
 
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
-#include <acfutils/conf.h>
 #include <acfutils/dr.h>
 #include <acfutils/geom.h>
 #include <acfutils/log.h>
@@ -90,6 +89,8 @@ static struct {
 	dr_t	min_volts;
 	dr_t	mode_req;
 	dr_t	mode_act;
+	dr_t	filter_req;
+	dr_t	filter_act;
 	dr_t	fail_dr_name_dr;
 } drs;
 
@@ -114,7 +115,12 @@ static int busnr = BUSNR_DFL;
 static float min_volts = MIN_VOLTS_DFL;
 static int mode_req = -1;
 static int mode_act = -1;
+static int filter_req = -1;
+static int filter_act = -1;
 static char fail_dr_name[128] = { 0 };
+
+const conf_t *xtcas_conf = NULL;
+conf_t *conf = NULL;
 
 static double xp_get_time(void *handle);
 static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl,
@@ -127,10 +133,10 @@ static int tcas_config_handler(XPLMCommandRef, XPLMCommandPhase, void *);
 static int test_gui_handler(XPLMCommandRef, XPLMCommandPhase, void *);
 static XPLMCommandRef show_test_gui_cmd;
 static XPLMCommandRef hide_test_gui_cmd;
+#endif	/* !VSI_DRAW_MODE */
 
 static XPLMCommandRef filter_all_cmd, filter_thrt_cmd, filter_abv_cmd;
 static XPLMCommandRef filter_blw_cmd;
-#endif	/* !VSI_DRAW_MODE */
 
 static XPLMCommandRef mode_stby_cmd, mode_taonly_cmd, mode_tara_cmd;
 static XPLMCommandRef tcas_test_cmd;
@@ -376,6 +382,7 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 			    test_gui_handler, 1, NULL);
 			XPLMRegisterCommandHandler(hide_test_gui_cmd,
 			    test_gui_handler, 1, NULL);
+#endif	/* !VSI_DRAW_MODE */
 
 			XPLMRegisterCommandHandler(filter_all_cmd,
 			    tcas_config_handler, 1, NULL);
@@ -385,7 +392,6 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 			    tcas_config_handler, 1, NULL);
 			XPLMRegisterCommandHandler(filter_blw_cmd,
 			    tcas_config_handler, 1, NULL);
-#endif	/* !VSI_DRAW_MODE */
 
 			XPLMRegisterCommandHandler(mode_stby_cmd,
 			    tcas_config_handler, 1, NULL);
@@ -401,9 +407,17 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 		xtcas_init(&xp_intf_in_ops, out_ops);
 		xtcas_inited = B_TRUE;
 	} else if (xtcas_is_powered() && !xtcas_is_failed() &&
-	    mode_req >= TCAS_MODE_STBY && mode_req <= TCAS_MODE_TARA) {
-		xtcas_set_mode(mode_req);
+	    mode_req >= TCAS_MODE_STBY && mode_req <= TCAS_MODE_TARA &&
+	    filter_req >= TCAS_FILTER_ALL && filter_req <= TCAS_FILTER_BLW) {
+#if	VSI_DRAW_MODE
+		if (dr_geti(&drs.xpdr_mode) != 1)
+			xtcas_set_mode(mode_req);
+		else
+#endif	/* VSI_DRAW_MODE */
+			xtcas_set_mode(TCAS_MODE_STBY);
+		xtcas_set_filter(filter_req);
 		mode_act = mode_req;
+		filter_act = filter_req;
 		xtcas_run();
 		xtcas_snd_sys_run(volume);
 		if (ff_a320_intf_inited)
@@ -486,23 +500,19 @@ tcas_config_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 	} else if (ref == mode_tara_cmd) {
 		logMsg("TCAS MODE: TA/RA");
 		mode_req = TCAS_MODE_TARA;
-	}
-#if	!VSI_DRAW_MODE
-	else if (ref == filter_all_cmd) {
+	} else if (ref == filter_all_cmd) {
 		logMsg("TCAS FILTER: ALL");
-		xtcas_set_filter(TCAS_FILTER_ALL);
+		filter_req = TCAS_FILTER_ALL;
 	} else if (ref == filter_thrt_cmd) {
 		logMsg("TCAS FILTER: THRT");
-		xtcas_set_filter(TCAS_FILTER_THRT);
+		filter_req = TCAS_FILTER_THRT;
 	} else if (ref == filter_abv_cmd) {
 		logMsg("TCAS FILTER: ABV");
-		xtcas_set_filter(TCAS_FILTER_ABV);
+		filter_req = TCAS_FILTER_ABV;
 	} else if (ref == filter_blw_cmd) {
 		logMsg("TCAS FILTER: BLW");
-		xtcas_set_filter(TCAS_FILTER_BLW);
-	}
-#endif	/* !VSI_DRAW_MODE */
-	else {
+		filter_req = TCAS_FILTER_BLW;
+	} else {
 		VERIFY_MSG(0, "Unknown command %p received", ref);
 	}
 	return (1);
@@ -528,17 +538,19 @@ test_gui_handler(XPLMCommandRef ref, XPLMCommandPhase phase, void *refcon)
 static void
 config_load(void)
 {
-	conf_t *conf = NULL;
 	char *path;
 	int errline;
 	FILE *fp;
+
+	conf = conf_create_empty();
+	xtcas_conf = conf;
 
 	memset(&xtcas_dbg, 0, sizeof (xtcas_dbg));
 
 	path = mkpathname(plugindir, "X-TCAS.cfg", NULL);
 	if (!file_exists(path, NULL)) {
 		free(path);
-		return;
+		goto errout;
 	}
 
 	fp = fopen(path, "rb");
@@ -546,7 +558,7 @@ config_load(void)
 		logMsg("Error opening configuration file %s: %s",
 		    path, strerror(errno));
 		free(path);
-		return;
+		goto errout;
 	}
 	conf = conf_read(fp, &errline);
 	if (conf == NULL) {
@@ -554,7 +566,7 @@ config_load(void)
 		    "error on line %d\n", path, errline);
 		free(path);
 		fclose(fp);
-		return;
+		goto errout;
 	}
 
 	free(path);
@@ -576,7 +588,11 @@ config_load(void)
 	READ_DBG_CONF(ff_a320);
 #undef	READ_DBG_CONF
 
-	conf_free(conf);
+	xtcas_conf = conf;
+	return;
+errout:
+	conf = conf_create_empty();
+	xtcas_conf = conf;
 }
 
 PLUGIN_API int
@@ -616,6 +632,7 @@ XPluginStart(char *name, char *sig, char *desc)
 	    "Show debugging interface");
 	hide_test_gui_cmd = XPLMCreateCommand("X-TCAS/hide_debug_gui",
 	    "Hide debugging interface");
+#endif	/* !VSI_DRAW_MODE */
 
 	filter_all_cmd = XPLMCreateCommand("X-TCAS/filter_all",
 	    "Set TCAS display filter to ALL");
@@ -625,7 +642,6 @@ XPluginStart(char *name, char *sig, char *desc)
 	    "Set TCAS display filter to ABOVE");
 	filter_blw_cmd = XPLMCreateCommand("X-TCAS/filter_blw",
 	    "Set TCAS display filter to BELOW");
-#endif	/* !VSI_DRAW_MODE */
 
 	mode_stby_cmd = XPLMCreateCommand("X-TCAS/mode_stby",
 	    "Set TCAS mode to STANDBY");
@@ -651,6 +667,8 @@ XPluginStop(void)
 PLUGIN_API int
 XPluginEnable(void)
 {
+	const char *s;
+
 	config_load();
 
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
@@ -661,14 +679,19 @@ XPluginEnable(void)
 	dr_create_i(&drs.busnr, &busnr, B_TRUE, "xtcas/busnr");
 	dr_create_f(&drs.min_volts, &min_volts, B_TRUE, "xtcas/min_volts");
 	dr_create_i(&drs.mode_req, &mode_req, B_TRUE, "xtcas/mode_req");
-	dr_create_i(&drs.mode_act, &mode_act, B_TRUE, "xtcas/mode_act");
+	dr_create_i(&drs.mode_act, &mode_act, B_FALSE, "xtcas/mode_act");
+	dr_create_i(&drs.filter_req, &filter_req, B_TRUE, "xtcas/filter_req");
+	dr_create_i(&drs.filter_act, &filter_act, B_FALSE, "xtcas/filter_act");
 	dr_create_b(&drs.fail_dr_name_dr, fail_dr_name, sizeof (fail_dr_name),
-	    B_TRUE, "xtcas/fail_dr_name");
+	    B_TRUE, "xtcas/fail_dr");
+
+	conf_get_i(xtcas_conf, "busnr", &busnr);
+	conf_get_f(xtcas_conf, "min_volts", &min_volts);
+	if (conf_get_str(xtcas_conf, "fail_dr", &s))
+		strlcpy(fail_dr_name, s, sizeof (fail_dr_name));
 
 	fdr_find(&drs.xpdr_mode, "sim/cockpit/radios/transponder_mode");
 	fdr_find(&drs.bus_volts, "sim/cockpit2/electrical/bus_volts");
-	fdr_find(&drs.xpdr_mode,
-	    "sim/cockpit2/radios/actuators/transponder_mode");
 	fdr_find(&drs.xpdr_fail, "sim/operation/failures/rel_xpndr");
 	fdr_find(&drs.altm_fail, "sim/operation/failures/rel_g_alt");
 	fdr_find(&drs.adc_fail, "sim/operation/failures/rel_adc_comp");
@@ -686,6 +709,7 @@ XPluginEnable(void)
 PLUGIN_API void
 XPluginDisable(void)
 {
+
 #if	VSI_DRAW_MODE
 	vsi_fini();
 #endif
@@ -694,6 +718,8 @@ XPluginDisable(void)
 	dr_delete(&drs.min_volts);
 	dr_delete(&drs.mode_req);
 	dr_delete(&drs.mode_act);
+	dr_delete(&drs.filter_req);
+	dr_delete(&drs.filter_act);
 	dr_delete(&drs.fail_dr_name_dr);
 
 	if (xtcas_inited) {
@@ -710,6 +736,7 @@ XPluginDisable(void)
 			    test_gui_handler, 1, NULL);
 			XPLMUnregisterCommandHandler(hide_test_gui_cmd,
 			    test_gui_handler, 1, NULL);
+#endif	/* !VSI_DRAW_MODE */
 
 			XPLMUnregisterCommandHandler(filter_all_cmd,
 			    tcas_config_handler, 1, NULL);
@@ -719,7 +746,6 @@ XPluginDisable(void)
 			    tcas_config_handler, 1, NULL);
 			XPLMUnregisterCommandHandler(filter_blw_cmd,
 			    tcas_config_handler, 1, NULL);
-#endif	/* !VSI_DRAW_MODE */
 
 			XPLMUnregisterCommandHandler(mode_stby_cmd,
 			    tcas_config_handler, 1, NULL);
@@ -738,6 +764,12 @@ XPluginDisable(void)
 	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Airplanes,
 	    0, NULL);
 	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);
+
+	if (conf != NULL) {
+		conf_free(conf);
+		conf = NULL;
+		xtcas_conf = NULL;
+	}
 }
 
 PLUGIN_API void

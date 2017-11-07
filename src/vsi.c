@@ -1084,6 +1084,8 @@ vsi_drs_update(vsi_t *vsi)
 	case VS_FMT_MPM:
 		vsi->vs_value = MPS2FPM(dr_getf(&vsi->vs_dr) / 60);
 		break;
+	default:
+		vsi->vs_dr_fmt = VS_FMT_FPM;
 	}
 }
 
@@ -1100,11 +1102,23 @@ draw_vsis(XPLMDrawingPhase phase, int before, void *refcon)
 		vsi_t *vsi = &vsis[i];
 
 		if (vsi->sz <= 0 || vsi->sz > MAX_SZ) {
-			if (vsi->running)
+			if (vsi->running) {
+				char key[64];
+
 				shutdown_vsi(i);
-			vsi->start_time = 0;
-			vsi->brt = BRT_DFL;
-			vsi->scale_enum = VSI_SCALE_DFL;
+				vsi->start_time = 0;
+				vsi->brt = BRT_DFL;
+				vsi->scale_enum = VSI_SCALE_DFL;
+
+				snprintf(key, sizeof (key),
+				    "vsis/%d/brt", i);
+				conf_get_i(xtcas_conf, key, (int *)&vsi->brt);
+				snprintf(key, sizeof (key),
+				    "vsis/%d/scale", i);
+				conf_get_i(xtcas_conf, key, &vsi->scale_enum);
+				vsi->scale_enum = MIN(vsi->scale_enum,
+				    VSI_NUM_SCALES - 1);
+			}
 			continue;
 		} else if (!vsi->running) {
 			vsi->shutdown = B_FALSE;
@@ -1155,6 +1169,8 @@ vsi_init(const char *plugindir)
 	memset(vsis, 0, sizeof (vsis));
 	for (int i = 0; i < MAX_VSIS; i++) {
 		vsi_t *vsi = &vsis[i];
+		char key[64];
+		const char *s;
 
 		dr_create_i(&vsi->x_dr, (int *)&vsi->x, B_TRUE,
 		    "xtcas/vsis/%d/x", i);
@@ -1168,9 +1184,9 @@ vsi_init(const char *plugindir)
 		    "xtcas/vsis/%d/brt", i);
 		dr_create_b(&vsi->vs_dr_name_dr, vsi->vs_dr_name,
 		    sizeof (vsi->vs_dr_name), B_TRUE,
-		    "xtcas/vsis/%d/data_src", i);
+		    "xtcas/vsis/%d/vs_src", i);
 		dr_create_i(&vsi->vs_dr_fmt_dr, (int *)&vsi->vs_dr_fmt, B_TRUE,
-		    "xtcas/vsis/%d/data_src_fmt", i);
+		    "xtcas/vsis/%d/vs_src_fmt", i);
 		dr_create_b(&vsi->fail_dr_name_dr, vsi->fail_dr_name,
 		    sizeof (vsi->fail_dr_name), B_TRUE,
 		    "xtcas/vsis/%d/fail_dr", i);
@@ -1180,6 +1196,50 @@ vsi_init(const char *plugindir)
 		vsi->brt = BRT_DFL;
 		vsi->scale_enum = VSI_SCALE_DFL;
 		vsi->busnr = i;
+
+		switch (i) {
+		case 0:
+		case 2:
+			strlcpy(vsi->vs_dr_name,
+			    "sim/cockpit2/gauges/indicators/vvi_fpm_pilot",
+			    sizeof (vsi->vs_dr_name));
+			strlcpy(vsi->fail_dr_name,
+			    "sim/operation/failures/rel_ss_vvi",
+			    sizeof (vsi->fail_dr_name));
+			break;
+		case 1:
+		case 3:
+			strlcpy(vsi->vs_dr_name,
+			    "sim/cockpit2/gauges/indicators/vvi_fpm_copilot",
+			    sizeof (vsi->vs_dr_name));
+			strlcpy(vsi->fail_dr_name,
+			    "sim/operation/failures/rel_cop_vvi",
+			    sizeof (vsi->fail_dr_name));
+			break;
+		}
+
+		snprintf(key, sizeof (key), "vsi/%d/x", i);
+		conf_get_i(xtcas_conf, key, (int *)&vsi->x);
+		snprintf(key, sizeof (key), "vsi/%d/y", i);
+		conf_get_i(xtcas_conf, key, (int *)&vsi->y);
+		snprintf(key, sizeof (key), "vsi/%d/sz", i);
+		conf_get_i(xtcas_conf, key, (int *)&vsi->sz);
+		vsi->sz = MIN(vsi->sz, MAX_SZ);
+		snprintf(key, sizeof (key), "vsi/%d/brt", i);
+		conf_get_i(xtcas_conf, key, (int *)&vsi->brt);
+		snprintf(key, sizeof (key), "vsi/%d/scale", i);
+		conf_get_i(xtcas_conf, key, &vsi->scale_enum);
+		vsi->scale_enum = MIN(vsi->scale_enum, VSI_NUM_SCALES - 1);
+		snprintf(key, sizeof (key), "vsi/%d/vs_src", i);
+		if (conf_get_str(xtcas_conf, key, &s))
+			strlcpy(vsi->vs_dr_name, s, sizeof (vsi->vs_dr_name));
+		snprintf(key, sizeof (key), "vsi/%d/vs_src_fmt", i);
+		conf_get_i(xtcas_conf, key, (int *)&vsi->vs_dr_fmt);
+		snprintf(key, sizeof (key), "vsi/%d/fail_dr", i);
+		if (conf_get_str(xtcas_conf, key, &s)) {
+			strlcpy(vsi->fail_dr_name, s,
+			    sizeof (vsi->fail_dr_name));
+		}
 
 		for (int j = 0; j < 2; j++) {
 			glGenTextures(1, &vsi->tex[j].gl_tex);
@@ -1194,28 +1254,6 @@ vsi_init(const char *plugindir)
 		cv_init(&vsi->cv);
 		mutex_init(&vsi->state_lock);
 	}
-
-	strlcpy(vsis[0].vs_dr_name,
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_pilot",
-	    sizeof (vsis[0].vs_dr_name));
-	strlcpy(vsis[1].vs_dr_name,
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_copilot",
-	    sizeof (vsis[1].vs_dr_name));
-	strlcpy(vsis[2].vs_dr_name,
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_pilot",
-	    sizeof (vsis[2].vs_dr_name));
-	strlcpy(vsis[3].vs_dr_name,
-	    "sim/cockpit2/gauges/indicators/vvi_fpm_copilot",
-	    sizeof (vsis[3].vs_dr_name));
-
-	strlcpy(vsis[0].fail_dr_name, "sim/operation/failures/rel_ss_vvi",
-	    sizeof (vsis[0].fail_dr_name));
-	strlcpy(vsis[1].fail_dr_name, "sim/operation/failures/rel_cop_vvi",
-	    sizeof (vsis[1].fail_dr_name));
-	strlcpy(vsis[2].fail_dr_name, "sim/operation/failures/rel_ss_vvi",
-	    sizeof (vsis[2].fail_dr_name));
-	strlcpy(vsis[3].fail_dr_name, "sim/operation/failures/rel_cop_vvi",
-	    sizeof (vsis[3].fail_dr_name));
 
 	fdr_find(&bus_volts, "sim/cockpit2/electrical/bus_volts");
 
