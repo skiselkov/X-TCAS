@@ -44,13 +44,6 @@
 #include "vsi.h"
 #include "xplane.h"
 
-#define	VSI_STYLE_ATR		1
-#define	VSI_STYLE_HONEYWELL	2
-
-#ifndef	VSI_STYLE
-#define	VSI_STYLE	VSI_STYLE_ATR
-#endif
-
 #define	VSI_SCREEN_DELAY	2
 #define	VSI_SCREEN_WHITE_DELAY	2.1
 #define	VSI_RING_DELAY		4

@@ -25,6 +25,17 @@
 extern "C" {
 #endif
 
+#define	VSI_STYLE_ATR		1
+#define	VSI_STYLE_HONEYWELL	2
+
+#ifndef	VSI_STYLE
+#define	VSI_STYLE	VSI_STYLE_ATR
+#endif
+
+#ifndef	VSI_DRAW_MODE
+#define	VSI_DRAW_MODE	0
+#endif
+
 bool_t vsi_init(const char *plugindir);
 void vsi_fini(void);
 

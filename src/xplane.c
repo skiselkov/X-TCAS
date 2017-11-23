@@ -45,9 +45,8 @@
 #include "xtcas.h"
 #include "xplane.h"
 
-#if	VSI_DRAW_MODE
 #include "vsi.h"
-#else
+#if	!VSI_DRAW_MODE
 #include "xplane_test.h"
 #endif
 
@@ -618,7 +617,8 @@ XPluginStart(char *name, char *sig, char *desc)
 	snprintf(name, 64, XTCAS_PLUGIN_NAME, XTCAS_VER);
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
-	logMsg("This is X-TCAS version %x", XTCAS_VER);
+	logMsg("This is X-TCAS version %x (confopts: VSI:%d STYLE:%d)",
+	    XTCAS_VER, VSI_DRAW_MODE, VSI_STYLE);
 	sim_intf_init();
 	snd_dir = mkpathname(plugindir, "data", "msgs", NULL);
 	if (!xtcas_snd_sys_init(snd_dir)) {
