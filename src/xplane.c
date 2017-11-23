@@ -606,6 +606,8 @@ XPluginStart(char *name, char *sig, char *desc)
 
 	log_init(XPLMDebugString, "xtcas");
 
+	/* Always use Unix-native paths on the Mac! */
+	XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
 	XPLMGetPluginInfo(XPLMGetMyID(), NULL, plugindir, NULL, NULL);
 #if	IBM
 	fix_pathsep(plugindir);
