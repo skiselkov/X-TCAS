@@ -38,7 +38,6 @@
 
 #define	ALT_ROUND_MUL		FPM2MPS(100)	/* altitude rouding multiple */
 #define	EQ_ALT_THRESH		FEET2MET(100)	/* equal altitude threshold */
-#define	LEVEL_VVEL_THRESH	FPM2MPS(300)	/* m/s */
 #define	D_VVEL_MAN_THRESH	FPM2MPS(200)	/* m/s^2 */
 #define	D_VVEL_MAN_TIME		FPM2MPS(6)	/* seconds */
 #define	NUM_RA_INFOS		26
@@ -64,14 +63,16 @@
 #define	ON_GROUND_AGL_CHK_THRESH	FEET2MET(1700)
 #define	INF_VS				FPM2MPS(100000)
 #define	APCH_SPD_THRESH			KT2MPS(40)
+#define	CLEARING_CLIMB_RATE		FPM2MPS(1000)
 
 /*
  * When checking if an RA hint is still active, we boost the TA horizontal
- * and vertical volume by this factor. This helps us to avoid issuing a
+ * and vertical volume by these factors. This helps us to avoid issuing a
  * CLEAR OF CONFLICT too early, when returning to the original path could
  * trigger a second RA.
  */
-#define	HINT_INCR_FACT			1.2
+#define	HINT_H_INCR_FACT		1.1
+#define	HINT_V_INCR_FACT		1.7
 
 #define	TCAS_TEST_DUR			8	/* seconds */
 
@@ -1063,8 +1064,11 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 
 	hint = avl_find(RA_hints, &srch, NULL);
 	if (cpa != NULL && (!oacf->on_ground || hint != NULL)) {
+		double dist = vect2_abs(vect2_sub(VECT3_TO_VECT2(
+		    my_acf->cur_pos_3d), VECT3_TO_VECT2(oacf->cur_pos_3d)));
 		double r_vel = ((cpa->d_t == 0) ? 1 : -1) *
 		    vect2_abs(vect2_sub(my_acf->trk_v, oacf->trk_v));
+		double r_alt = ABS(my_acf->cur_pos_3d.z - oacf->cur_pos_3d.z);
 
 		/*
 		 * Fast RA-corrective threat iff:
@@ -1081,8 +1085,8 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		    cpa->d_t <= sl->tau_RA && cpa->d_t > 0) {
 			dbg_log(threat, 1, "bogie %p RA_CORR(fast) "
 			    "cpa->d_v: %.0f <= %.0f cpa->d_h: %.0f <= %.0f "
-			    "d_t: %.1f", oacf->acf_id, cpa->d_v,
-			    sl->alim_RA, cpa->d_h, sl->dmod_RA, cpa->d_t);
+			    "d_t: %.1f", oacf->acf_id, cpa->d_v, sl->alim_RA,
+			    cpa->d_h, sl->dmod_RA, cpa->d_t);
 			oacf->threat = RA_THREAT_CORR;
 			oacf->slow_closure = B_FALSE;
 			return;
@@ -1114,19 +1118,24 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		 * If the previous filter didn't find a corrective threat, we
 		 * might still derive an RA threat level from a previous hint.
 		 * However, only do so if:
-		 * 1) The current position violates the TA-protected volume
+		 * 1) The target is reporting altitude (if they stop
+		 *    reporting, we need to drop the RA).
+		 * 2) The current position violates the TA-protected volume
 		 *    boosted by 20% in both vertical & horizontal extent
 		 *    (to avoid issuing a TA against an RA threat).
-		 * 2) The target is reporting altitude (if they stop
-		 *    reporting, we need to drop the RA).
-		 * 3) We are actually closing in.
+		 * 3) We're closing in, or if we're moving away, they're
+		 *    so close that if we started a descent or climb after
+		 *    declaring clear of conflict, we might trigger a second
+		 *    TA or RA.
 		 */
-		if (hint != NULL && r_vel < APCH_SPD_THRESH &&
-		    oacf->alt_rptg &&
-		    (cpa->d_h <= sl->dmod_TA * HINT_INCR_FACT ||
-		    d_h <= sl->dmod_TA * HINT_INCR_FACT) &&
-		    (cpa->d_v <= sl->zthr_TA * HINT_INCR_FACT ||
-		    d_v <= sl->zthr_TA * HINT_INCR_FACT)) {
+		if (hint != NULL && oacf->alt_rptg &&
+		    (cpa->d_h <= sl->dmod_TA * HINT_H_INCR_FACT ||
+		    d_h <= sl->dmod_TA * HINT_H_INCR_FACT) &&
+		    (cpa->d_v <= sl->zthr_TA * HINT_V_INCR_FACT ||
+		    d_v <= sl->zthr_TA * HINT_V_INCR_FACT) &&
+		    ((r_vel <= APCH_SPD_THRESH) ||
+		    ((sl->dmod_TA - dist) / ABS(r_vel) >
+		    (r_alt - sl->zthr_TA) / CLEARING_CLIMB_RATE))) {
 			/* Hints cannot exist on initial RAs */
 			ASSERT3U(tcas_state.adv_state, ==, ADV_STATE_RA);
 			dbg_log(threat, 1, "bogie %p RA_HINT(%d,%d) "
@@ -1134,8 +1143,8 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 			    "d_h: %.0f|%.0f <= %.0f && d_v: %.0f|%.0f <= %.0f",
 			    oacf->acf_id, hint->level, hint->slow_closure,
 			    cpa->d_t, r_vel, oacf->alt_rptg, cpa->d_h, d_h,
-			    sl->dmod_TA * HINT_INCR_FACT, cpa->d_v, d_v,
-			    sl->zthr_TA * HINT_INCR_FACT);
+			    sl->dmod_TA * HINT_H_INCR_FACT, cpa->d_v, d_v,
+			    sl->zthr_TA * HINT_V_INCR_FACT);
 			ASSERT3U(hint->level, >=, RA_THREAT_PREV);
 			oacf->threat = hint->level;
 			oacf->slow_closure = hint->slow_closure;

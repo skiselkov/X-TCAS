@@ -45,7 +45,6 @@
 #include "xtcas.h"
 
 #define	MAX_CONTACTS		100
-#define	LEVEL_VVEL_THRESH	FPM2MPS(300)
 
 typedef enum {
 	UPDATE_DELETE,

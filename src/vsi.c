@@ -651,7 +651,7 @@ draw_contacts(vsi_t *vsi, vsi_tex_t *tex)
 			break;
 		}
 
-		if (ctc->vs >= FPM2MPS(500)) {
+		if (ctc->vs >= LEVEL_VVEL_THRESH) {
 			cairo_move_to(tex->cr, X(p.x + CTC_SZ * 0.8),
 			    X(p.y - CTC_SZ / 2));
 			cairo_rel_line_to(tex->cr, 0, X(CTC_SZ));
@@ -662,7 +662,7 @@ draw_contacts(vsi_t *vsi, vsi_tex_t *tex)
 			cairo_rel_line_to(tex->cr, X(CTC_SZ * 0.2),
 			    X(-CTC_SZ * 0.3));
 			cairo_stroke(tex->cr);
-		} else if (ctc->vs <= FPM2MPS(-500)) {
+		} else if (ctc->vs <= -LEVEL_VVEL_THRESH) {
 			cairo_move_to(tex->cr, X(p.x + CTC_SZ * 0.8),
 			    X(p.y - CTC_SZ / 2));
 			cairo_rel_line_to(tex->cr, 0, X(CTC_SZ));
@@ -1013,8 +1013,10 @@ composite_vsi(vsi_t *vsi)
 
 	mutex_enter(&vsi->tex_lock);
 
-	if (vsi->cur_tex == -1)
-		goto done;
+	if (vsi->cur_tex == -1) {
+		mutex_exit(&vsi->tex_lock);
+		return;
+	}
 	ASSERT3S(vsi->cur_tex, >=, 0);
 	ASSERT3S(vsi->cur_tex, <, 2);
 
@@ -1031,6 +1033,8 @@ composite_vsi(vsi_t *vsi)
 		tex->chg = B_FALSE;
 	}
 
+	mutex_exit(&vsi->tex_lock);
+
 	glBegin(GL_QUADS);
 	glTexCoord2f(0, 1);
 	glVertex2f(vsi->x, vsi->y);
@@ -1041,9 +1045,6 @@ composite_vsi(vsi_t *vsi)
 	glTexCoord2f(1, 1);
 	glVertex2f(vsi->x + vsi->sz, vsi->y);
 	glEnd();
-
-done:
-	mutex_exit(&vsi->tex_lock);
 }
 
 static void

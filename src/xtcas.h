@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+#define	LEVEL_VVEL_THRESH	FPM2MPS(500)
+
 /*
  * Controls the master TCAS operation mode:
  *
