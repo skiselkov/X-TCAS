@@ -224,6 +224,7 @@ sets32(int id, int32_t val)
 	svi.ValueSet(id, &val);
 }
 
+static inline float getf32(int id) __attribute__((unused));
 static inline float
 getf32(int id)
 {
