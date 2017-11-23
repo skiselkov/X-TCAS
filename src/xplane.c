@@ -409,13 +409,18 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 	    mode_req >= TCAS_MODE_STBY && mode_req <= TCAS_MODE_TARA &&
 	    filter_req >= TCAS_FILTER_ALL && filter_req <= TCAS_FILTER_BLW) {
 #if	VSI_DRAW_MODE
-		if (dr_geti(&drs.xpdr_mode) != 1)
+		if (dr_geti(&drs.xpdr_mode) != 1) {
 			xtcas_set_mode(mode_req);
-		else
-#endif	/* VSI_DRAW_MODE */
+			mode_act = mode_req;
+		} else {
 			xtcas_set_mode(TCAS_MODE_STBY);
-		xtcas_set_filter(filter_req);
+			mode_act = TCAS_MODE_STBY;
+		}
+#else	/* !VSI_DRAW_MODE */
+		xtcas_set_mode(mode_req);
 		mode_act = mode_req;
+#endif	/* !VSI_DRAW_MODE */
+		xtcas_set_filter(filter_req);
 		filter_act = filter_req;
 		xtcas_run();
 		xtcas_snd_sys_run(volume);

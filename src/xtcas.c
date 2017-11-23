@@ -666,6 +666,7 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 	tcas_mode_t mode = tcas_state.mode;
 
 	in_ops->get_oth_acf_pos(in_ops->handle, &pos, &count);
+	dbg_log(contact, 3, "received %d contacts from sim", (int)count);
 
 	/* walk the tree and mark all acf as out-of-date */
 	for (tcas_acf_t *acf = avl_first(&other_acf_glob); acf != NULL;
@@ -732,7 +733,7 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		/* mark acf as up-to-date */
 		acf->up_to_date = B_TRUE;
 
-		dbg_log(tcas, 2, "bogie %p " PRINTF_ACF_FMT, acf->acf_id,
+		dbg_log(contact, 2, "bogie %p " PRINTF_ACF_FMT, acf->acf_id,
 		    PRINTF_ACF_ARGS(acf));
 	}
 
@@ -741,7 +742,8 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 	    acf != NULL; acf = acf_next) {
 		acf_next = AVL_NEXT(&other_acf_glob, acf);
 		if (!acf->up_to_date) {
-			dbg_log(tcas, 2, "bogie %p contact lost", acf->acf_id);
+			dbg_log(contact, 2, "bogie %p contact lost",
+			    acf->acf_id);
 			if (out_ops != NULL) {
 				out_ops->delete_contact(out_ops->handle,
 				    acf->acf_id);
@@ -2024,7 +2026,6 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				if (tcas_state.ra != NULL) {
 					prev_msg = tcas_state.ra->info->msg;
 					free(tcas_state.ra);
-				} else {
 				}
 				tcas_state.ra = ra;
 				tcas_state.change_t = now;
@@ -2053,6 +2054,16 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 					    ra->info->vs.red_hi.max);
 				}
 			} else {
+				/*
+				 * Avoid attempting to generate RA hints yet,
+				 * since we have transitioned to a TRAFFIC or
+				 * clear-of-conflict state too recently. On
+				 * next cycle, we will retry.
+				 */
+				cookie = NULL;
+				while ((avl_destroy_nodes(&RA_cpas, &cookie)) !=
+				    NULL)
+					;
 				free(ra);
 			}
 		}
@@ -2318,8 +2329,11 @@ xtcas_run(void)
 	ASSERT(inited);
 
 	/* protection in case the sim is paused */
-	if (t < last_collect_t + WORKER_LOOP_INTVAL)
+	if (t < last_collect_t + WORKER_LOOP_INTVAL) {
+		dbg_log(tcas, 5, "run: not enough time has elapsed "
+		    "(t: %.1f last: %.1f)", t, last_collect_t);
 		return;
+	}
 	last_collect_t = t;
 
 	mutex_enter(&acf_lock);
