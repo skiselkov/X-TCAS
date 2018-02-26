@@ -89,7 +89,7 @@ static bool_t		sound = B_TRUE;
 
 static double get_time(void *handle);
 static void get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl,
-    double *hdg);
+    double *hdg, bool_t *gear_ext);
 static void get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
 static void update_contact(void *handle, void *acf_id, double rbrg,
     double rdist, double ralt, double vs, tcas_threat_t level);
@@ -931,13 +931,15 @@ get_time(void *handle)
 }
 
 static void
-get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl, double *hdg)
+get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl, double *hdg,
+    bool_t *gear_ext)
 {
 	geo_pos2_t pos2 = fpp2geo(VECT3_TO_VECT2(my_acf.pos), &fpp);
 	UNUSED(handle);
 	*pos = GEO_POS3(pos2.lat, pos2.lon, my_acf.pos.z);
 	*alt_agl = my_acf.pos.z - gnd_elev;
 	*hdg = my_acf.trk;
+	*gear_ext = B_FALSE;
 }
 
 static void

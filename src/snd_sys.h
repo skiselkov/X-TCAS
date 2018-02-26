@@ -28,9 +28,10 @@ bool_t xtcas_snd_sys_init(const char *snd_dir);
 void xtcas_snd_sys_fini(void);
 
 void xtcas_play_msg(tcas_msg_t msg);
+void xtcas_play_msgs(tcas_msg_t *msgs);
 void xtcas_set_suppressed(bool_t flag);
 bool_t xtcas_is_suppressed(void);
-void xtcas_stop_msg();
+void xtcas_stop_msg(bool_t empty_queue);
 bool_t xtcas_msg_is_playing(void);
 void xtcas_snd_sys_run(double volume);
 

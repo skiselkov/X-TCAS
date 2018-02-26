@@ -61,6 +61,70 @@
  *		greatest vertical separation is selected.
  */
 
+/*
+ * When configured as a TCAS I GTS 820 system, we modify this table to
+ * only contain the 'A' and 'B' sensitivity levels that correspond with
+ * the GTS 820 SL values.
+ */
+
+#if	GTS820_MODE
+
+#define	NUM_SL 3
+
+static const SL_t SL_table[NUM_SL] = {
+    {	/* Stand-by mode */
+	.SL_id =	1,
+	.agl =		B_TRUE,
+	.alt_min =	-INFINITY,
+	.alt_max =	FEET2MET(50),
+	.hyst_down =	0,
+	.hyst_up =	FEET2MET(10),
+	.tau_TA =	0,
+	.tau_RA =	0,
+	.dmod_TA =	0,
+	.dmod_RA =	0,
+	.zthr_TA =	0,
+	.zthr_RA =	0,
+	.alim_RA =	0
+    },
+    {	/* SL-A */
+	.SL_id =	2,
+	.agl =		B_TRUE,
+	.alt_min =	FEET2MET(50),
+	.alt_max =	FEET2MET(2000),
+	.hyst_down =	FEET2MET(10),
+	.hyst_up =	FEET2MET(100),
+	.tau_TA =	20,
+	.tau_RA =	0,
+	.dmod_TA =	NM2MET(0.20),
+	.dmod_RA =	0.0,
+	.zthr_TA =	FEET2MET(600),
+	.zthr_RA =	0,
+	.alim_RA =	0,
+	.gear_test =	GEAR_TEST_DOWN
+    },
+    {	/* SL-B */
+	.SL_id =	3,
+	.agl =		B_TRUE,
+	.alt_min =	FEET2MET(2000),
+	.alt_max =	INFINITY,
+	.hyst_down =	FEET2MET(100),
+	.hyst_up =	FEET2MET(100),
+	.tau_TA =	30,
+	.tau_RA =	0,
+	.dmod_TA =	NM2MET(0.55),
+	.dmod_RA =	0.0,
+	.zthr_TA =	FEET2MET(800),
+	.zthr_RA =	0,
+	.alim_RA =	0,
+	.gear_test =	GEAR_TEST_UP
+    }
+};
+
+#else	/* !GTS820_MODE */
+/*
+ * TCAS II v7.1 mode.
+ */
 #define	NUM_SL 8
 static const SL_t SL_table[NUM_SL] = {
     {	/* SL1 */
@@ -185,6 +249,8 @@ static const SL_t SL_table[NUM_SL] = {
     }
 };
 
+#endif	/* !GTS820_MODE */
+
 /*
  * Selects the appropriate TCAS sensitivity level based on previously selected
  * sensitivity level (prev_SL_id), altitude AMSL (alt_msl) and altitude AGL
@@ -193,7 +259,7 @@ static const SL_t SL_table[NUM_SL] = {
  */
 const SL_t *
 xtcas_SL_select(unsigned prev_SL_id, double alt_msl, double alt_agl,
-    unsigned force_select_SL)
+    unsigned force_select_SL, bool_t gear_ext)
 {
 	if (force_select_SL != 0) {
 		VERIFY3U(force_select_SL, >=, 1);
@@ -213,7 +279,9 @@ xtcas_SL_select(unsigned prev_SL_id, double alt_msl, double alt_agl,
 			max = sl->alt_max;
 		}
 		if ((sl->agl && alt_agl >= min && alt_agl < max) ||
-		    (!sl->agl && alt_msl >= min && alt_msl < max))
+		    (!sl->agl && alt_msl >= min && alt_msl < max) ||
+		    (sl->gear_test == GEAR_TEST_DOWN && gear_ext) ||
+		    (sl->gear_test == GEAR_TEST_UP && !gear_ext))
 			return (sl);
 	}
 	abort();

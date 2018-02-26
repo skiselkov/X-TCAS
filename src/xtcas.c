@@ -24,6 +24,7 @@
 #include <acfutils/avl.h>
 #include <acfutils/helpers.h>
 #include <acfutils/geom.h>
+#include <acfutils/list.h>
 #include <acfutils/log.h>
 #include <acfutils/math.h>
 #include <acfutils/perf.h>
@@ -114,11 +115,13 @@ typedef struct tcas_acf {
 	bool_t	trend_data_ready; /* indicates if gs/trk/vvel is available */
 	bool_t	up_to_date;	/* used for efficient position updates */
 	bool_t	on_ground;	/* on-ground condition */
+	bool_t	gear_ext;	/* gear is extended */
 	cpa_t	*cpa;		/* CPA this aircraft participates in */
 	bool_t	slow_closure;	/* for RA threats that are closing in slow */
 	tcas_threat_t	threat;	/* type of TCAS threat */
 
 	avl_node_t	node;		/* used by other_acf_glob tree */
+	list_node_t	new_TA_node;	/* used by new_TA_threat list */
 } tcas_acf_t;
 
 typedef enum {
@@ -631,7 +634,7 @@ static void
 update_my_position(double t)
 {
 	in_ops->get_my_acf_pos(in_ops->handle, &my_acf_glob.cur_pos,
-	    &my_acf_glob.agl, &my_acf_glob.hdg);
+	    &my_acf_glob.agl, &my_acf_glob.hdg, &my_acf_glob.gear_ext);
 	my_acf_glob.cur_pos_3d = VECT3(0, 0, my_acf_glob.cur_pos.elev);
 	xtcas_obj_pos_update(&my_acf_glob.pos_upd, t, my_acf_glob.cur_pos,
 	    my_acf_glob.agl);
@@ -835,10 +838,25 @@ destroy_acf_state(avl_tree_t *other_acf_copy)
 	void *cookie = NULL;
 	tcas_acf_t *acf;
 
+	/*
+	 * We will back up the threat level to the original tcas_acf_t
+	 * object, since we need it in GTS820 mode to determine if a new
+	 * TA threat has come up.
+	 */
+	mutex_enter(&acf_lock);
+
 	while ((acf = avl_destroy_nodes(other_acf_copy, &cookie)) != NULL) {
+		tcas_acf_t *orig_acf;
+
 		ASSERT3P(acf->cpa, ==, NULL);
+		orig_acf = avl_find(&other_acf_glob, acf, NULL);
+		if (orig_acf != NULL)
+			orig_acf->threat = acf->threat;
 		free(acf);
 	}
+
+	mutex_exit(&acf_lock);
+
 	avl_destroy(other_acf_copy);
 }
 
@@ -1223,7 +1241,6 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 		}
 	}
 
-	ASSERT3U(oacf->threat, ==, OTH_THREAT);
 	/*
 	 * Proximate traffic iff:
 	 * 1) horiz separation within prox traffic dist thresh, AND
@@ -1935,6 +1952,64 @@ construct_RA_hints(avl_tree_t *RA_hints, avl_tree_t *RA_cpas)
 	}
 }
 
+#if	GTS820_MODE
+
+/*
+ * Builds and plays the messages for a particular set of new TA threats using
+ * the GTS820 annunciation method ("Traffic", "<relative bearing>",
+ * "<high|low|same altitude>", "<distance in NM>").
+ */
+static void
+gts820_TA_play_msg(const tcas_acf_t *my_acf, const list_t *new_TA_threats)
+{
+	vect2_t my_pos_2d = VECT3_TO_VECT2(my_acf->cur_pos_3d);
+	tcas_msg_t *msgs;
+	unsigned i, n;
+
+	CTASSERT(GTS820_MSG_12CLK - GTS820_MSG_1CLK == 11);
+	CTASSERT(GTS820_MSG_P10NM - GTS820_MSG_M1NM == 11);
+
+	i = 0;
+	n = (4 * list_count(new_TA_threats)) + 1;
+	msgs = calloc(n, sizeof (*msgs));
+	msgs[n - 1] = -1u;
+
+	for (tcas_acf_t *acf = list_head(new_TA_threats); acf != NULL;
+	    acf = list_next(new_TA_threats, acf)) {
+		vect2_t pos_2d = VECT3_TO_VECT2(acf->cur_pos_3d);
+		vect2_t d_pos_2d = vect2_sub(pos_2d, my_pos_2d);
+		double rdist = vect2_abs(d_pos_2d);
+		double rbrg = (rdist > 0 ? normalize_hdg(dir2hdg(d_pos_2d) -
+		    my_acf->hdg) : 0);
+		double ralt = acf->cur_pos_3d.z - my_acf->cur_pos_3d.z;
+		int sector = clampi(normalize_hdg(rbrg - (360 / 24)) /
+		    (360 / 12), 0, 11);
+		tcas_msg_t sector_msg = GTS820_MSG_1CLK + sector;
+		tcas_msg_t alt_msg, dist_msg;
+		int dist_nm;
+
+		if (ralt > FEET2MET(300))
+			alt_msg = GTS820_MSG_HIGH;
+		else if (ralt < FEET2MET(-300))
+			alt_msg = GTS820_MSG_LOW;
+		else
+			alt_msg = GTS820_MSG_SAME_ALT;
+		dist_nm = clampi(MET2NM(rdist), 0, 11);
+		dist_msg = GTS820_MSG_M1NM + dist_nm;
+
+		msgs[i++] = RA_MSG_TFC;
+		msgs[i++] = sector_msg;
+		msgs[i++] = alt_msg;
+		msgs[i++] = dist_msg;
+	}
+
+	xtcas_play_msgs(msgs);
+
+	free(msgs);
+}
+
+#endif	/* GTS820_MODE */
+
 static void
 resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
     const SL_t *sl, avl_tree_t *RA_hints, uint64_t now)
@@ -1945,18 +2020,31 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 	bool_t slow_closure_only = B_TRUE;
 	avl_tree_t RA_cpas;
 	void *cookie;
+	list_t new_TA_threats;
+
+	/*
+	 * List of newly discovered TA threats during this cycle. This is
+	 * used by the GTS820 mode to annunciate individual new TA threats.
+	 */
+	list_create(&new_TA_threats, sizeof (tcas_acf_t),
+	    offsetof(tcas_acf_t, new_TA_node));
 
 	/* Re-assign threat level as necessary. */
 	for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
 	    acf = AVL_NEXT(other_acf, acf)) {
+		bool_t non_TA = (acf->threat < TA_THREAT);
+
 		assign_threat_level(my_acf, acf, sl, RA_hints,
 		    tcas_state.filter);
+
 		TA_found |= (acf->threat == TA_THREAT);
 		RA_prev_found |= (acf->threat == RA_THREAT_PREV);
 		RA_corr_found |= (acf->threat == RA_THREAT_CORR);
 		if (acf->threat == RA_THREAT_PREV ||
 		    acf->threat == RA_THREAT_CORR)
 			slow_closure_only &= acf->slow_closure;
+		if (non_TA && acf->threat >= TA_THREAT)
+			list_insert_tail(&new_TA_threats, acf);
 	}
 
 	avl_create(&RA_cpas, cpa_compar, sizeof (cpa_t),
@@ -2077,10 +2165,21 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		dbg_log(tcas, 1, "resolve_CPAs: TA  adv_state:%d  "
 		    "elapsed:%.0f", tcas_state.adv_state,
 		    (now - tcas_state.change_t) / 1000000.0);
-		if (tcas_state.adv_state < ADV_STATE_TA &&
-		    now - tcas_state.change_t >= STATE_CHG_DELAY) {
-			if (my_acf->agl > INHIBIT_AUDIO)
+		if (
+#if	GTS820_MODE
+		    list_count(&new_TA_threats) != 0
+#else	/* !GTS820_MODE */
+		    tcas_state.adv_state < ADV_STATE_TA &&
+		    now - tcas_state.change_t >= STATE_CHG_DELAY
+#endif	/* !GTS820_MODE */
+		    ) {
+			if (my_acf->agl > INHIBIT_AUDIO) {
+#if	GTS820_MODE
+				gts820_TA_play_msg(my_acf, &new_TA_threats);
+#else	/* !GTS820_MODE */
 				xtcas_play_msg(RA_MSG_TFC);
+#endif	/* !GTS820_MODE */
+			}
 			free(tcas_state.ra);
 			tcas_state.ra = NULL;
 			tcas_state.initial_ra_vs = NAN;
@@ -2121,6 +2220,10 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 	while ((avl_destroy_nodes(&RA_cpas, &cookie)) != NULL)
 		;
 	avl_destroy(&RA_cpas);
+
+	while (list_remove_head(&new_TA_threats) != NULL)
+		;
+	list_destroy(&new_TA_threats);
 }
 
 static void
@@ -2263,7 +2366,12 @@ main_loop(void *ignored)
 		if (sl == NULL || tcas_state.adv_state != ADV_STATE_RA) {
 			sl = xtcas_SL_select(sl != NULL ? sl->SL_id : 1,
 			    my_acf.cur_pos.elev, my_acf.agl,
-			    tcas_state.mode == TCAS_MODE_TAONLY ? 2 : 0);
+#if	GTS820_MODE
+			    0,
+#else
+			    tcas_state.mode == TCAS_MODE_TAONLY ? 2 : 0,
+#endif
+			    my_acf.gear_ext);
 			dbg_log(sl, 1, "SL: %d", sl->SL_id);
 			xtcas_SL = sl->SL_id;
 		}

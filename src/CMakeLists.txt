@@ -16,13 +16,14 @@
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
-SET(SRC SL.c dbg_log.c pos.c xtcas.c snd_sys.c)
-SET(HDR SL.h dbg_log.h pos.h xtcas.h snd_sys.h)
+SET(SRC SL.c dbg_log.c generic_intf.c pos.c xtcas.c snd_sys.c)
+SET(HDR SL.h dbg_log.h ../xtcas/generic_intf.h pos.h xtcas.h snd_sys.h)
 
 execute_process(COMMAND git rev-parse --short HEAD OUTPUT_VARIABLE XTCAS_VER)
 string(REGEX REPLACE "\n$" "" XTCAS_VER "${XTCAS_VER}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DXTCAS_VER=0x${XTCAS_VER}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DVSI_DRAW_MODE=${VSI_DRAW_MODE}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DGTS820_MODE=${GTS820_MODE}")
 if(NOT "${VSI_STYLE}" EQUAL "")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DVSI_STYLE=${VSI_STYLE}")
 endif()

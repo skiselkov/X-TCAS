@@ -31,6 +31,12 @@ extern "C" {
 #define	INHIBIT_NO_ALT_RPTG_ACF	FEET2MET(15500)
 #define	INHIBIT_CLB_RA		FEET2MET(48000)
 
+typedef enum {
+	GEAR_TEST_IGN,
+	GEAR_TEST_DOWN,
+	GEAR_TEST_UP
+} gear_test_t;
+
 /* See SL.c for an explanation of these */
 typedef struct SL {
 	unsigned	SL_id;		/* numeric ID */
@@ -46,10 +52,11 @@ typedef struct SL {
 	double		zthr_TA;	/* meters */
 	double		zthr_RA;	/* meters */
 	double		alim_RA;	/* meters */
+	gear_test_t	gear_test;
 } SL_t;
 
 const SL_t *xtcas_SL_select(unsigned prev_SL_id, double alt_msl,
-    double alt_agl, unsigned force_select_SL);
+    double alt_agl, unsigned force_select_SL, bool_t gear_ext);
 
 #ifdef __cplusplus
 }

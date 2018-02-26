@@ -71,19 +71,6 @@ win32:contains(CROSS_COMPILE, x86_64-w64-mingw32-) {
 	LIBS += -ldbghelp
 }
 
-win32:contains(CROSS_COMPILE, i686-w64-mingw32-) {
-	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-32 \
-	    --cflags")
-	LIBS += -L $$[LIBACFUTILS]/qmake/win32 -lacfutils
-	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-32 --libs")
-
-	LIBS += -lXPLM
-	LIBS += -L../OpenAL/libs/Win32 -lOpenAL32
-	LIBS += -L../GL_for_Windows/lib -lopengl32
-	DEFINES += __MIDL_user_allocate_free_DEFINED__
-	LIBS += -ldbghelp
-}
-
 unix:!macx {
 	DEFINES += APL=0 IBM=0 LIN=1
 	TARGET = lin.xpl
@@ -95,13 +82,6 @@ linux-g++-64 {
 	    --cflags")
 	LIBS += -L $$[LIBACFUTILS]/qmake/lin64 -lacfutils
 	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-64 --libs")
-}
-
-linux-g++-32 {
-	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-32 \
-	    --cflags")
-	LIBS += -L$$[LIBACFUTILS]/qmake/lin32 -lacfutils
-	LIBS += -lssp_nonshared
 }
 
 macx {
@@ -126,14 +106,10 @@ macx-clang {
 	LIBS += -L$$[LIBACFUTILS]/qmake/mac64 -lacfutils
 }
 
-macx-clang-32 {
-	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-32 --libs")
-	LIBS += -L$$[LIBACFUTILS]/qmake/mac32 -lacfutils
-}
-
 HEADERS += \
 	../src/dbg_log.h \
 	../src/ff_a320_intf.h \
+	../xtcas/generic_intf.h \
 	../src/pos.h \
 	../src/SL.h \
 	../src/snd_sys.h \
@@ -144,6 +120,7 @@ HEADERS += \
 SOURCES += \
 	../src/dbg_log.c \
 	../src/ff_a320_intf.c \
+	../src/generic_intf.c \
 	../src/pos.c \
 	../src/SL.c \
 	../src/snd_sys.c \

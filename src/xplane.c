@@ -39,6 +39,7 @@
 #include <acfutils/types.h>
 #include <acfutils/thread.h>
 
+#include "../xtcas/generic_intf.h"
 #include "dbg_log.h"
 #include "ff_a320_intf.h"
 #include "snd_sys.h"
@@ -67,6 +68,7 @@
 
 static bool_t intf_inited = B_FALSE;
 static bool_t xtcas_inited = B_FALSE;
+static bool_t standalone_mode = B_FALSE;
 static struct {
 	dr_t	time;
 	dr_t	elev;
@@ -82,6 +84,7 @@ static struct {
 	dr_t	xpdr_fail;
 	dr_t	altm_fail;
 	dr_t	adc_fail;
+	dr_t	gear_deploy;
 
 	/* our datarefs */
 	dr_t	busnr;
@@ -104,6 +107,7 @@ static avl_tree_t acf_pos_tree;
 static geo_pos3_t my_acf_pos;
 static double my_acf_agl = 0;
 static double my_acf_hdg = 0;
+static bool_t my_acf_gear_ext = B_FALSE;
 static double last_pos_collected = 0;
 static double cur_sim_time = 0;
 static double first_sim_time = 0;
@@ -123,7 +127,7 @@ conf_t *conf = NULL;
 
 static double xp_get_time(void *handle);
 static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl,
-    double *hdg);
+    double *hdg, bool_t *gear_ext);
 static void xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
 
 static int tcas_config_handler(XPLMCommandRef, XPLMCommandPhase, void *);
@@ -236,6 +240,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	UNUSED(ref);
 
 	double now;
+	double gear_deploy[2];
 
 	/* grab updates only at a set interval */
 	now = xp_get_time(NULL);
@@ -249,6 +254,9 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	my_acf_pos.elev = dr_getf(&drs.elev);
 	my_acf_agl = FEET2MET(dr_getf(&drs.rad_alt_ft));
 	my_acf_hdg = dr_getf(&drs.hdg);
+	/* Two gear check should suffice - you're not landing on just one! */
+	dr_getvf(&drs.gear_deploy, gear_deploy, 0, 2);
+	my_acf_gear_ext = (gear_deploy[0] != 0.0 || gear_deploy[1] != 0.0);
 
 	/* grab all other aircraft positions */
 	for (int i = 0; i < MAX_MP_PLANES; i++) {
@@ -310,13 +318,15 @@ xp_get_time(void *handle)
  * Called from X-TCAS to get our aircraft position.
  */
 static void
-xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl, double *hdg)
+xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl, double *hdg,
+    bool_t *gear_ext)
 {
 	UNUSED(handle);
 	ASSERT(intf_inited);
 	*pos = my_acf_pos;
 	*alt_agl = my_acf_agl;
 	*hdg = my_acf_hdg;
+	*gear_ext = my_acf_gear_ext;
 }
 
 /*
@@ -374,13 +384,16 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 #if	VSI_DRAW_MODE
 			out_ops = &vsi_out_ops;
 #else	/* !VSI_DRAW_MODE */
-			/* Stand-alone mode */
-			out_ops = &xplane_test_out_ops;
+			out_ops = generic_intf_get_xtcas_ops();
+			if (out_ops == NULL) {
+				standalone_mode = B_TRUE;
+				out_ops = &xplane_test_out_ops;
 
-			XPLMRegisterCommandHandler(show_test_gui_cmd,
-			    test_gui_handler, 1, NULL);
-			XPLMRegisterCommandHandler(hide_test_gui_cmd,
-			    test_gui_handler, 1, NULL);
+				XPLMRegisterCommandHandler(show_test_gui_cmd,
+				    test_gui_handler, 1, NULL);
+				XPLMRegisterCommandHandler(hide_test_gui_cmd,
+				    test_gui_handler, 1, NULL);
+			}
 #endif	/* !VSI_DRAW_MODE */
 
 			XPLMRegisterCommandHandler(filter_all_cmd,
@@ -702,6 +715,7 @@ XPluginEnable(void)
 	fdr_find(&drs.xpdr_fail, "sim/operation/failures/rel_xpndr");
 	fdr_find(&drs.altm_fail, "sim/operation/failures/rel_g_alt");
 	fdr_find(&drs.adc_fail, "sim/operation/failures/rel_adc_comp");
+	fdr_find(&drs.gear_deploy, "sim/aircraft/parts/acf_gear_deploy");
 
 #if	VSI_DRAW_MODE
 	if (!vsi_init(plugindir)) {
@@ -710,16 +724,18 @@ XPluginEnable(void)
 	}
 #endif	/* VSI_DRAW_MODE */
 
+	generic_intf_init();
+
 	return (1);
 }
 
 PLUGIN_API void
 XPluginDisable(void)
 {
-
 #if	VSI_DRAW_MODE
 	vsi_fini();
 #endif
+	generic_intf_fini();
 
 	dr_delete(&drs.busnr);
 	dr_delete(&drs.min_volts);
@@ -738,11 +754,12 @@ XPluginDisable(void)
 			ff_a320_intf_inited = B_FALSE;
 		} else {
 #if !VSI_DRAW_MODE
-			/* Stand-alone mode */
-			XPLMUnregisterCommandHandler(show_test_gui_cmd,
-			    test_gui_handler, 1, NULL);
-			XPLMUnregisterCommandHandler(hide_test_gui_cmd,
-			    test_gui_handler, 1, NULL);
+			if (standalone_mode) {
+				XPLMUnregisterCommandHandler(show_test_gui_cmd,
+				    test_gui_handler, 1, NULL);
+				XPLMUnregisterCommandHandler(hide_test_gui_cmd,
+				    test_gui_handler, 1, NULL);
+			}
 #endif	/* !VSI_DRAW_MODE */
 
 			XPLMUnregisterCommandHandler(filter_all_cmd,
@@ -783,6 +800,8 @@ PLUGIN_API void
 XPluginReceiveMessage(XPLMPluginID from, int msg, void *param)
 {
 	UNUSED(from);
-	UNUSED(msg);
-	UNUSED(param);
+
+	if (msg == XTCAS_GENERIC_INTF_GET && param != NULL) {
+		*(xtcas_generic_intf_t **)param = generic_intf_get_intf_ops();
+	}
 }

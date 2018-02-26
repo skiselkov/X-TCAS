@@ -417,7 +417,7 @@ ff_a320_update(double step, void *tag)
 
 	if (gets32(ids.cancel) != 0 && xtcas_msg_is_playing()) {
 		dbg_log(ff_a320, 1, "Cancelling playing message");
-		xtcas_stop_msg();
+		xtcas_stop_msg(B_TRUE);
 	}
 	suppress = (gets32(ids.suppress) != 0);
 	if (suppress != xtcas_is_suppressed()) {

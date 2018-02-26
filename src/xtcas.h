@@ -123,9 +123,38 @@ typedef enum {
 	RA_MSG_MAINT_VS,	/* 1x MAINTAIN VERTICAL SPEED */
 	RA_MSG_MAINT_VS_CROSS,	/* 1x MAINTAIN VERT. SPEED, CROSSING MAINTAIN */
 	RA_MSG_LEVEL_OFF,	/* 2x LEVEL OFF */
-	RA_MSG_TFC,		/* 2x TRAFFIC */
+	RA_MSG_TFC,		/* 2x TRAFFIC  (only 1x on GTS 820) */
 	TCAS_TEST_PASS,
 	TCAS_TEST_FAIL,
+#if	GTS820_MODE
+	GTS820_MSG_1CLK,	/* "One o'clock" */
+	GTS820_MSG_2CLK,	/* "Two o'clock" */
+	GTS820_MSG_3CLK,	/* "Three o'clock" */
+	GTS820_MSG_4CLK,	/* "Four o'clock" */
+	GTS820_MSG_5CLK,	/* "Five o'clock" */
+	GTS820_MSG_6CLK,	/* "Six o'clock" */
+	GTS820_MSG_7CLK,	/* "Seven o'clock" */
+	GTS820_MSG_8CLK,	/* "Eight o'clock" */
+	GTS820_MSG_9CLK,	/* "Nine o'clock" */
+	GTS820_MSG_10CLK,	/* "Ten o'clock" */
+	GTS820_MSG_11CLK,	/* "Eleven o'clock" */
+	GTS820_MSG_12CLK,	/* "Twelve o'clock" */
+	GTS820_MSG_HIGH,	/* "High" */
+	GTS820_MSG_LOW,		/* "Low" */
+	GTS820_MSG_SAME_ALT,	/* "Same altitude" */
+	GTS820_MSG_M1NM,	/* "Less than 1 mile */
+	GTS820_MSG_1NM,		/* "One mile" */
+	GTS820_MSG_2NM,		/* "Two miles" */
+	GTS820_MSG_3NM,		/* "Three miles" */
+	GTS820_MSG_4NM,		/* "Four miles" */
+	GTS820_MSG_5NM,		/* "Five miles" */
+	GTS820_MSG_6NM,		/* "Six miles" */
+	GTS820_MSG_7NM,		/* "Seven miles" */
+	GTS820_MSG_8NM,		/* "Eight miles" */
+	GTS820_MSG_9NM,		/* "Nine miles" */
+	GTS820_MSG_10NM,	/* "Ten miles" */
+	GTS820_MSG_P10NM,	/* "More than ten miles" */
+#endif	/* GTS820_MODE */
 	RA_NUM_MSGS		/* invalid */
 } tcas_msg_t;
 
@@ -188,9 +217,12 @@ typedef struct {
 	 * from the 0'th parallel and 0'th meridian (north/east increasing).
 	 * ELEV should be our current barometric altitude. All altitudes
 	 * are in meters. Heading is degrees from true north.
+	 * `gear_ext' should be filled with the gear extension status (B_TRUE,
+	 * for gear extended, B_FALSE otherwise). This is only used for the
+	 * GTS 820 mode.
 	 */
 	void	(*get_my_acf_pos)(void *handle, geo_pos3_t *pos,
-		    double *alt_agl, double *hdg);
+		    double *alt_agl, double *hdg, bool_t *gear_ext);
 	/*
 	 * This function serves to feed TCAS aircraft contacts into X-TCAS.
 	 * The callee must malloc() an array of acf_pos_t structures and
