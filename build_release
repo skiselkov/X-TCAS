@@ -18,6 +18,7 @@
 OUTPUT="X-TCAS"
 
 VSI_STYLE=0
+GTS820_MODE=0
 SNDSET="male1"
 
 while getopts "v:s:G" opt; do
@@ -30,6 +31,7 @@ while getopts "v:s:G" opt; do
 		;;
 	G)
 		VSI_STYLE=0
+		GTS820_MODE=1
 		SNDSET="gts820"
 		;;
 	*)
@@ -41,6 +43,7 @@ done
 
 (
 	cd qmake
+	qmake -set GTS820_MODE "$GTS820_MODE"
 	if [[ "$VSI_STYLE" = 0 ]]; then
 		qmake -set VSI_DRAW_MODE 0
 		qmake -set VSI_STYLE 1
