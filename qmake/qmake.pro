@@ -29,7 +29,6 @@ INCLUDEPATH += ../SDK
 INCLUDEPATH += ../OpenAL/include
 INCLUDEPATH += $$[LIBACFUTILS]/src
 
-
 QMAKE_CFLAGS += -std=c99 -g -W -Wall -Wextra -Werror -fvisibility=hidden
 QMAKE_CFLAGS += -Wunused-result -DTEST_STANDALONE_BUILD=0
 QMAKE_CFLAGS += -DXTCAS_VER=0x$$system("git rev-parse --short HEAD")
@@ -42,6 +41,8 @@ DEFINES += _GNU_SOURCE DEBUG _FILE_OFFSET_BITS=64 _USE_MATH_DEFINES
 
 # Latest X-Plane APIs. No legacy support needed.
 DEFINES += XPLM200 XPLM210
+
+DEFINES += VSI_DRAW_MODE=$$[VSI_DRAW_MODE] VSI_STYLE=$$[VSI_STYLE]
 
 # Just a generally good idea not to depend on shipped libgcc.
 !macx {

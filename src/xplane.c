@@ -637,8 +637,8 @@ XPluginStart(char *name, char *sig, char *desc)
 	snprintf(name, 64, XTCAS_PLUGIN_NAME, XTCAS_VER);
 	strcpy(sig, XTCAS_PLUGIN_SIG);
 	strcpy(desc, XTCAS_PLUGIN_DESCRIPTION);
-	logMsg("This is X-TCAS version %x (confopts: VSI:%d STYLE:%d)",
-	    XTCAS_VER, VSI_DRAW_MODE, VSI_STYLE);
+	logMsg("This is X-TCAS version %x (confopts: VSI:%d STYLE:%d "
+	    "GTS820:%d)", XTCAS_VER, VSI_DRAW_MODE, VSI_STYLE, GTS820_MODE);
 	sim_intf_init();
 	snd_dir = mkpathname(plugindir, "data", "msgs", NULL);
 	if (!xtcas_snd_sys_init(snd_dir)) {
@@ -732,10 +732,11 @@ XPluginEnable(void)
 PLUGIN_API void
 XPluginDisable(void)
 {
+	generic_intf_fini();
+
 #if	VSI_DRAW_MODE
 	vsi_fini();
 #endif
-	generic_intf_fini();
 
 	dr_delete(&drs.busnr);
 	dr_delete(&drs.min_volts);

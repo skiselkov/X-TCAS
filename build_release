@@ -1,0 +1,61 @@
+#!/bin/bash
+#
+# CDDL HEADER START
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+# CDDL HEADER END
+#
+# Copyright 2018 Saso Kiselkov. All rights reserved.
+
+OUTPUT="X-TCAS"
+
+VSI_STYLE=0
+SNDSET="male1"
+
+while getopts "v:s:G" opt; do
+	case "$opt" in
+	v)
+		VSI_STYLE="$OPTARG"
+		;;
+	s)
+		SNDSET="$OPTARG"
+		;;
+	G)
+		VSI_STYLE=0
+		SNDSET="gts820"
+		;;
+	*)
+		echo "Invalid option -$OPTARG" >&2
+		exit 1
+		;;
+	esac
+done
+
+(
+	cd qmake
+	if [[ "$VSI_STYLE" = 0 ]]; then
+		qmake -set VSI_DRAW_MODE 0
+		qmake -set VSI_STYLE 1
+	else
+		qmake -set VSI_DRAW_MODE 1
+		qmake -set VSI_STYLE "$VSI_STYLE"
+	fi
+	if [[ $(uname) = "Darwin" ]]; then
+		./build-mac
+	else
+		./build-win-lin
+	fi
+) || exit 1
+
+rm -rf "$OUTPUT" && \
+cp -r qmake/output/64 "$OUTPUT" && \
+mkdir -p "$OUTPUT/data/msgs" && \
+cp -r $SNDSET/*.wav "$OUTPUT/data/msgs"

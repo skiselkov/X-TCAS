@@ -32,6 +32,10 @@
 extern "C" {
 #endif
 
+#ifndef	GTS820_MODE
+#define	GTS820_MODE	0
+#endif
+
 /*
  * X-Plane-specific plugin hooks.
  */
