@@ -164,7 +164,7 @@ generic_get_mode(void)
 static void
 generic_set_filter(tcas_filter_t filter)
 {
-	xtcas_set_mode(filter);
+	xtcas_set_filter(filter);
 }
 
 static tcas_filter_t
