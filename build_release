@@ -59,6 +59,6 @@ done
 ) || exit 1
 
 rm -rf "$OUTPUT" && \
-cp -r qmake/output/64 "$OUTPUT" && \
 mkdir -p "$OUTPUT/data/msgs" && \
+cp -r qmake/output/64 "$OUTPUT" && \
 cp -r $SNDSET/*.wav "$OUTPUT/data/msgs"
