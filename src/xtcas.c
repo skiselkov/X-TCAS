@@ -66,6 +66,12 @@
 #define	APCH_SPD_THRESH			KT2MPS(40)
 #define	CLEARING_CLIMB_RATE		FPM2MPS(1000)
 
+#if	GTS820_MODE
+#define	NUM_TEST_CTC			3
+#else
+#define	NUM_TEST_CTC			4
+#endif
+
 /*
  * When checking if an RA hint is still active, we boost the TA horizontal
  * and vertical volume by these factors. This helps us to avoid issuing a
@@ -803,6 +809,7 @@ copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy, bool_t test)
 		 *	a TRAFFIC threat (solid yellow circle).
 		 * contact 4: 2NM right, 200 ft above, flying level,
 		 *	classified as an RA threat (solid red square).
+		 * When we're built in GTS820 mode, contact 4 will be absent.
 		 */
 
 #define	ADD_TEST_CONTACT(id, x_nm, y_nm, rel_alt_ft, trend, threat_lvl) \
@@ -824,7 +831,9 @@ copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy, bool_t test)
 		ADD_TEST_CONTACT(1, -2, 3, 1000, 0, OTH_THREAT);
 		ADD_TEST_CONTACT(2, 2, 3, -1000, -1000, PROX_THREAT);
 		ADD_TEST_CONTACT(3, -2, 0, -200, 1000, TA_THREAT);
+#if	!GTS820_MODE
 		ADD_TEST_CONTACT(4, 2, 0, 200, 0, RA_THREAT_CORR);
+#endif
 
 #undef	ADD_TEST_CONTACT
 	}
@@ -2310,7 +2319,11 @@ main_loop(void *ignored)
 					 * During a system test, we give a
 					 * normal climb indication on the PFD.
 					 */
-#if	VSI_DRAW_MODE
+#if	GTS820_MODE
+					out_ops->update_RA(out_ops->handle,
+					    ADV_STATE_TA, RA_MSG_TFC,
+					    -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+#elif	VSI_DRAW_MODE
 					out_ops->update_RA(out_ops->handle,
 					    ADV_STATE_RA, RA_MSG_CLB,
 					    RA_TYPE_CORRECTIVE, RA_SENSE_UPWARD,
@@ -2332,7 +2345,8 @@ main_loop(void *ignored)
 			    TCAS_TEST_DUR) {
 				/* Remove the fake test contacts */
 				if (out_ops != NULL) {
-					for (uintptr_t i = 1; i <= 4; i++) {
+					for (uintptr_t i = 1; i <= NUM_TEST_CTC;
+					    i++) {
 						out_ops->delete_contact(
 						    out_ops->handle, (void *)i);
 					}

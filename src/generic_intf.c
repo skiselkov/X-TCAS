@@ -74,6 +74,7 @@ static xtcas_generic_intf_t generic_ops = {
 			op_name = NULL; \
 			out_handle = NULL; \
 		} \
+		mutex_exit(&out_ops_lock); \
 	} while (0)
 
 static void

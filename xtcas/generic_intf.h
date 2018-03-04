@@ -25,6 +25,7 @@
 extern "C" {
 #endif
 
+#define	XTCAS_PLUGIN_SIG	"skiselkov.xtcas"
 #define	XTCAS_GENERIC_INTF_GET	0x100000
 
 typedef struct {

@@ -55,7 +55,6 @@
 #define	POS_UPDATE_INTVAL		0.1
 #define	STARTUP_DELAY			5.0	/* seconds */
 #define	XTCAS_PLUGIN_NAME		"X-TCAS (%x)"
-#define	XTCAS_PLUGIN_SIG		"skiselkov.xtcas"
 #define	XTCAS_PLUGIN_DESCRIPTION \
 	"Generic TCAS II v7.1 implementation for X-Plane"
 
