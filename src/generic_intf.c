@@ -19,9 +19,11 @@
 #include <acfutils/thread.h>
 
 #include "../xtcas/generic_intf.h"
+#include "xplane.h"
 
 static void generic_update_contact(void *handle, void *acf_id, double rbrg,
-    double rdist, double ralt, double vs, tcas_threat_t level);
+    double rdist, double ralt, double vs, double trk, double gs,
+    tcas_threat_t level);
 static void generic_delete_contact(void *handle, void *acf_id);
 static void generic_update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
@@ -32,9 +34,7 @@ static void generic_update_RA_prediction(void *handle, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
     bool_t reversal, double min_sep_cpa);
 
-static void generic_set_mode(tcas_mode_t mode);
 static tcas_mode_t generic_get_mode(void);
-static void generic_set_filter(tcas_filter_t filter);
 static tcas_filter_t generic_get_filter(void);
 static void generic_test(bool_t force_fail);
 static bool_t generic_test_is_in_prog(void);
@@ -79,18 +79,20 @@ static xtcas_generic_intf_t generic_ops = {
 
 static void
 generic_update_contact(void *handle, void *acf_id, double rbrg,
-    double rdist, double ralt, double vs, tcas_threat_t level)
+    double rdist, double ralt, double vs, double trk, double gs,
+    tcas_threat_t level)
 {
 	void *out_handle;
 	void (*update_contact)(void *handle, void *acf_id, double rbrg,
-	    double rdist, double ralt, double vs, tcas_threat_t level);
+	    double rdist, double ralt, double vs, double trk, double gs,
+	    tcas_threat_t level);
 
 	UNUSED(handle);
 	INTF_OP_GET(update_contact);
 
 	if (update_contact != NULL) {
 		update_contact(out_handle, acf_id, rbrg, rdist, ralt, vs,
-		    level);
+		    trk, gs, level);
 	}
 }
 
@@ -150,22 +152,10 @@ generic_update_RA_prediction(void *handle, tcas_msg_t msg,
 	}
 }
 
-static void
-generic_set_mode(tcas_mode_t mode)
-{
-	xtcas_set_mode(mode);
-}
-
 static tcas_mode_t
 generic_get_mode(void)
 {
 	return (xtcas_get_mode());
-}
-
-static void
-generic_set_filter(tcas_filter_t filter)
-{
-	xtcas_set_filter(filter);
 }
 
 static tcas_filter_t

@@ -22,6 +22,7 @@
 #include "pos.h"
 
 #define	STEP_BACK(step)	((step) == 0 ? (NUM_POS_STEPS - 1) : (step) - 1)
+#define	MAX_UPD_GS	500	/* m/s */
 
 /*
  * Puts a position update into `pos'. The time of the update is `t'.
@@ -30,6 +31,7 @@ void
 xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
 {
 	unsigned next_step = (pos->latest_step + 1) % NUM_POS_STEPS;
+	double gs;
 
 	if (pos->populated_steps > 0)
 		ASSERT3F(pos->time[pos->latest_step], <, t);
@@ -40,6 +42,22 @@ xtcas_obj_pos_update(obj_pos_t *pos, double t, geo_pos3_t upd, double rad_alt)
 	if (pos->populated_steps < NUM_POS_STEPS)
 		pos->populated_steps++;
 	pos->latest_step = next_step;
+
+	if (xtcas_obj_pos_get_gs(pos, &gs) && gs > MAX_UPD_GS) {
+		/*
+		 * If the groundspeed between two position updates is
+		 * excessive, then we are dealing with a replaced
+		 * contact that has just had its slots reused from the
+		 * simulator. Flush previous position information to
+		 * start rebuilding it, as the old data is unusable
+		 * anymore.
+		 */
+		pos->time[0] = t;
+		pos->rad_alt[0] = rad_alt;
+		pos->pos[0] = upd;
+		pos->populated_steps = 1;
+		pos->latest_step = 0;
+	}
 }
 
 /*

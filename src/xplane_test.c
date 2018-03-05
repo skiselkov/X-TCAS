@@ -239,12 +239,15 @@ xplane_test_fini(void)
 
 void
 xplane_test_update_contact(void *handle, void *acf_id, double rbrg,
-    double rdist, double ralt, double vs, tcas_threat_t level)
+    double rdist, double ralt, double vs, double trk, double gs,
+    tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
 
 	UNUSED(handle);
+	UNUSED(trk);
+	UNUSED(gs);
 
 	if (!inited)
 		return;

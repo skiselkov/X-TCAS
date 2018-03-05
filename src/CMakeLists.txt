@@ -16,8 +16,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(xtcas C)
 
-SET(SRC SL.c dbg_log.c generic_intf.c pos.c xtcas.c snd_sys.c)
-SET(HDR SL.h dbg_log.h ../xtcas/generic_intf.h pos.h xtcas.h snd_sys.h)
+SET(SRC SL.c dbg_log.c pos.c xtcas.c snd_sys.c)
+SET(HDR SL.h dbg_log.h pos.h xtcas.h snd_sys.h)
 
 execute_process(COMMAND git rev-parse --short HEAD OUTPUT_VARIABLE XTCAS_VER)
 string(REGEX REPLACE "\n$" "" XTCAS_VER "${XTCAS_VER}")
@@ -36,8 +36,10 @@ if("${TEST_STANDALONE_BUILD}" EQUAL "1")
 	LIST(APPEND SRC test.c)
 	LIST(APPEND HDR test.h)
 else()
-	LIST(APPEND SRC xplane.c xplane_test.c ff_a320_intf.c vsi.c)
-	LIST(APPEND HDR xplane.h xplane_test.h ff_a320_intf.h vsi.h)
+	LIST(APPEND SRC generic_intf.c xplane.c xplane_test.c ff_a320_intf.c
+	    vsi.c)
+	LIST(APPEND HDR ../xtcas/generic_intf.h xplane.h xplane_test.h
+	    ff_a320_intf.h vsi.h)
 	if(APPLE)
 		execute_process(COMMAND
 		    ${LIBACFUTILS}/pkg-config-deps mac-64 --cflags

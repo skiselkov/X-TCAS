@@ -704,6 +704,11 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 			    pos[i].pos.elev < my_pos.elev - LONG_VERT_FILTER)
 				continue;
 			break;
+		case TCAS_FILTER_EXP:
+			if (pos[i].pos.elev > my_pos.elev + LONG_VERT_FILTER ||
+			    pos[i].pos.elev < my_pos.elev - LONG_VERT_FILTER)
+				continue;
+			break;
 		default:
 			if (pos[i].pos.elev > my_pos.elev + NORM_VERT_FILTER ||
 			    pos[i].pos.elev < my_pos.elev - NORM_VERT_FILTER)
@@ -2266,7 +2271,10 @@ update_contacts(tcas_acf_t *my_acf, avl_tree_t *other_acf, bool_t test)
 				    my_acf->cur_pos_3d.z;
 				out_ops->update_contact(out_ops->handle,
 				    acf->acf_id, rbrg, rdist, ralt,
-				    acf->vvel, acf->threat);
+				    acf->trend_data_ready ? acf->vvel : NAN,
+				    acf->trend_data_ready ? acf->trk : NAN,
+				    acf->trend_data_ready ? acf->gs : NAN,
+				    acf->threat);
 			} else {
 				out_ops->delete_contact(out_ops->handle,
 				    acf->acf_id);

@@ -68,12 +68,14 @@ typedef enum {
  * TCAS_FILTER_ABV: irrespective of threat level, contacts are only
  *	displayed and TAs/RAs issued if they are within -9900ft..+2700ft
  *	of our aircraft.
+ * TCAS_FILTER_EXP: expanded surveillance envelope from -9900ft..+9900ft.
  */
 typedef enum {
 	TCAS_FILTER_ALL,	/* default */
 	TCAS_FILTER_THRT,
 	TCAS_FILTER_ABV,
-	TCAS_FILTER_BLW
+	TCAS_FILTER_BLW,
+	TCAS_FILTER_EXP
 } tcas_filter_t;
 
 /*
@@ -264,12 +266,15 @@ typedef struct {
 	 * 4) rdist Relative distance in meters.
 	 * 5) ralt Relative altitude in meters (positive up).
 	 * 6) vs The current vertical speed (in m/s) of this contact.
-	 * 7) level The current TCAS threat level of this aircraft.
+	 * 7) trk True track of the contact.
+	 * 8) gs True groundspeed of the contact.
+	 * 9) level The current TCAS threat level of this aircraft.
 	 *	This can be used to determine with which symbol the contact
 	 *	should be displayed (see tcas_threat_t).
 	 */
 	void	(*update_contact)(void *handle, void *acf_id, double rbrg,
-	    double rdist, double ralt, double vs, tcas_threat_t level);
+	    double rdist, double ralt, double vs, double trk, double gs,
+	    tcas_threat_t level);
 	/*
 	 * Deletes a contact that was previously acquired via get_oth_acf_pos.
 	 * Please note that X-TCAS may send a delete_contact before ever

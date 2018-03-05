@@ -419,7 +419,7 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 		xtcas_inited = B_TRUE;
 	} else if (xtcas_is_powered() && !xtcas_is_failed() &&
 	    mode_req >= TCAS_MODE_STBY && mode_req <= TCAS_MODE_TARA &&
-	    filter_req >= TCAS_FILTER_ALL && filter_req <= TCAS_FILTER_BLW) {
+	    filter_req >= TCAS_FILTER_ALL && filter_req <= TCAS_FILTER_EXP) {
 #if	VSI_DRAW_MODE
 		if (dr_geti(&drs.xpdr_mode) != 1) {
 			xtcas_set_mode(mode_req);
@@ -804,4 +804,16 @@ XPluginReceiveMessage(XPLMPluginID from, int msg, void *param)
 	if (msg == XTCAS_GENERIC_INTF_GET && param != NULL) {
 		*(xtcas_generic_intf_t **)param = generic_intf_get_intf_ops();
 	}
+}
+
+void
+generic_set_mode(tcas_mode_t mode)
+{
+	mode_req = mode;
+}
+
+void
+generic_set_filter(tcas_filter_t filter)
+{
+	filter_req = filter;
 }

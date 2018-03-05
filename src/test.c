@@ -92,7 +92,8 @@ static void get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl,
     double *hdg, bool_t *gear_ext);
 static void get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
 static void update_contact(void *handle, void *acf_id, double rbrg,
-    double rdist, double ralt, double vs, tcas_threat_t level);
+    double rdist, double ralt, double vs, double trk, double gs,
+    tcas_threat_t level);
 static void delete_contact(void *handle, void *acf_id);
 static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
@@ -963,13 +964,15 @@ get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 
 static void
 update_contact(void *handle, void *acf_id, double rbrg, double rdist,
-    double ralt, double vs, tcas_threat_t level)
+    double ralt, double vs, double trk, double gs, tcas_threat_t level)
 {
 	UNUSED(handle);
 	UNUSED(vs);
 	UNUSED(rbrg);
 	UNUSED(rdist);
 	UNUSED(ralt);
+	UNUSED(trk);
+	UNUSED(gs);
 
 	for (acf_t *acf = list_head(&other_acf); acf != NULL;
 	    acf = list_next(&other_acf, acf)) {

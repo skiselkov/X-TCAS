@@ -105,7 +105,8 @@ static double magvar;
 
 static void __stdcall ff_a320_update(double step, void *tag);
 static void update_contact(void *handle, void *acf_id, double rbrg,
-    double rdist, double ralt, double vs, tcas_threat_t level);
+    double rdist, double ralt, double vs, double trk, double gs,
+    tcas_threat_t level);
 static void delete_contact(void *handle, void *acf_id);
 static void update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
@@ -512,12 +513,14 @@ ff_a320_update(double step, void *tag)
 
 static void
 update_contact(void *handle, void *acf_id, double rbrg, double rdist,
-    double ralt, double vs, tcas_threat_t level)
+    double ralt, double vs, double trk, double gs, tcas_threat_t level)
 {
 	contact_t srch, *ctc;
 	avl_index_t where;
 
 	UNUSED(handle);
+	UNUSED(trk);
+	UNUSED(gs);
 
 	dbg_log(ff_a320, 2, "update_contact acf_id:%p rpos:%.0fx%.0fx%.0f "
 	    "vs:%.2f lvl:%d", acf_id, rbrg, rdist, ralt, vs, level);
