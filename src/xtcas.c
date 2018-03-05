@@ -67,6 +67,12 @@
 #define	CLEARING_CLIMB_RATE		FPM2MPS(1000)
 
 #if	GTS820_MODE
+#define	TA_THREAT_CANCEL_DELAY		SEC2USEC(8)
+#else	/* !GTS820_MODE */
+#define	TA_THREAT_CANCEL_DELAY		SEC2USEC(3)
+#endif	/* !GTS820_MODE */
+
+#if	GTS820_MODE
 #define	NUM_TEST_CTC			3
 #else
 #define	NUM_TEST_CTC			4
@@ -125,6 +131,7 @@ typedef struct tcas_acf {
 	cpa_t	*cpa;		/* CPA this aircraft participates in */
 	bool_t	slow_closure;	/* for RA threats that are closing in slow */
 	tcas_threat_t	threat;	/* type of TCAS threat */
+	uint64_t ta_time;	/* time when we became a TA threat */
 
 	avl_node_t	node;		/* used by other_acf_glob tree */
 	list_node_t	new_TA_node;	/* used by new_TA_threat list */
@@ -864,8 +871,10 @@ destroy_acf_state(avl_tree_t *other_acf_copy)
 
 		ASSERT3P(acf->cpa, ==, NULL);
 		orig_acf = avl_find(&other_acf_glob, acf, NULL);
-		if (orig_acf != NULL)
+		if (orig_acf != NULL) {
 			orig_acf->threat = acf->threat;
+			orig_acf->ta_time = acf->ta_time;
+		}
 		free(acf);
 	}
 
@@ -1071,7 +1080,7 @@ destroy_CPAs(avl_tree_t *cpas)
  */
 static void
 assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
-    avl_tree_t *RA_hints, tcas_filter_t filter)
+    avl_tree_t *RA_hints, tcas_filter_t filter, uint64_t now)
 {
 	double d_h = vect2_abs(vect2_sub(VECT3_TO_VECT2(oacf->cur_pos_3d),
 	    VECT3_TO_VECT2(my_acf->cur_pos_3d)));
@@ -1253,6 +1262,15 @@ assign_threat_level(tcas_acf_t *my_acf, tcas_acf_t *oacf, const SL_t *sl,
 			oacf->threat = TA_THREAT;
 			return;
 		}
+	}
+
+	/*
+	 * Don't degrade TAs too quickly to avoid duplicate "Traffic" calls.
+	 */
+	if (now - oacf->ta_time < TA_THREAT_CANCEL_DELAY) {
+		dbg_log(threat, 1, "bogie %p TA(delay)", oacf->acf_id);
+		oacf->threat = TA_THREAT;
+		return;
 	}
 
 	/*
@@ -2049,7 +2067,7 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		bool_t non_TA = (acf->threat < TA_THREAT);
 
 		assign_threat_level(my_acf, acf, sl, RA_hints,
-		    tcas_state.filter);
+		    tcas_state.filter, now);
 
 		TA_found |= (acf->threat == TA_THREAT);
 		RA_prev_found |= (acf->threat == RA_THREAT_PREV);
@@ -2057,8 +2075,10 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		if (acf->threat == RA_THREAT_PREV ||
 		    acf->threat == RA_THREAT_CORR)
 			slow_closure_only &= acf->slow_closure;
-		if (non_TA && acf->threat >= TA_THREAT)
+		if (non_TA && acf->threat >= TA_THREAT) {
 			list_insert_tail(&new_TA_threats, acf);
+			acf->ta_time = now;
+		}
 	}
 
 	avl_create(&RA_cpas, cpa_compar, sizeof (cpa_t),
