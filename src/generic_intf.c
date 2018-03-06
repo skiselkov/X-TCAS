@@ -47,6 +47,12 @@ static sim_intf_output_ops_t my_ops = {
     .update_RA = generic_update_RA,
     .update_RA_prediction = generic_update_RA_prediction
 };
+/*
+ * We need to track init state, because we might be called by external
+ * plugins after we were de-inited. So in those cases we gracefully
+ * ignore their requests.
+ */
+static bool_t inited = B_FALSE;
 static sim_intf_output_ops_t *out_ops = NULL;
 static mutex_t out_ops_lock;
 
@@ -66,15 +72,20 @@ static xtcas_generic_intf_t generic_ops = {
  */
 #define	INTF_OP_GET(op_name) \
 	do { \
-		mutex_enter(&out_ops_lock); \
-		if (out_ops != NULL && out_ops->op_name != NULL) { \
-			op_name = out_ops->op_name; \
-			out_handle = out_ops->handle; \
+		if (inited) { \
+			mutex_enter(&out_ops_lock); \
+			if (out_ops != NULL && out_ops->op_name != NULL) { \
+				op_name = out_ops->op_name; \
+				out_handle = out_ops->handle; \
+			} else { \
+				op_name = NULL; \
+				out_handle = NULL; \
+			} \
+			mutex_exit(&out_ops_lock); \
 		} else { \
 			op_name = NULL; \
 			out_handle = NULL; \
 		} \
-		mutex_exit(&out_ops_lock); \
 	} while (0)
 
 static void
@@ -155,30 +166,40 @@ generic_update_RA_prediction(void *handle, tcas_msg_t msg,
 static tcas_mode_t
 generic_get_mode(void)
 {
+	if (!inited)
+		return (0);
 	return (xtcas_get_mode());
 }
 
 static tcas_filter_t
 generic_get_filter(void)
 {
+	if (!inited)
+		return (0);
 	return (xtcas_get_filter());
 }
 
 static void
 generic_test(bool_t force_fail)
 {
+	if (!inited)
+		return;
 	xtcas_test(force_fail);
 }
 
 static bool_t
 generic_test_is_in_prog(void)
 {
+	if (!inited)
+		return (B_FALSE);
 	return (xtcas_test_is_in_prog());
 }
 
 static void
 generic_set_output_ops(sim_intf_output_ops_t *ops)
 {
+	if (!inited)
+		return;
 	mutex_enter(&out_ops_lock);
 	out_ops = ops;
 	mutex_exit(&out_ops_lock);
@@ -187,12 +208,18 @@ generic_set_output_ops(sim_intf_output_ops_t *ops)
 void
 generic_intf_init(void)
 {
+	ASSERT(!inited);
+	inited = B_TRUE;
 	mutex_init(&out_ops_lock);
 }
 
 void
 generic_intf_fini(void)
 {
+	if (!inited)
+		return;
+	inited = B_FALSE;
+
 	mutex_enter(&out_ops_lock);
 	out_ops = NULL;
 	mutex_exit(&out_ops_lock);
