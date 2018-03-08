@@ -671,7 +671,6 @@ XPluginStart(char *name, char *sig, char *desc)
 
 	tcas_test_cmd = XPLMCreateCommand("X-TCAS/test", "Perform TCAS test");
 	ASSERT(tcas_test_cmd != NULL);
-	printf("test command created\n");
 
 	return (1);
 }
