@@ -58,6 +58,7 @@ win32 {
 	TARGET = win.xpl
 	INCLUDEPATH += /usr/include/GL
 	QMAKE_DEL_FILE = rm -f
+	QMAKE_LFLAGS_RELEASE =
 }
 
 win32:contains(CROSS_COMPILE, x86_64-w64-mingw32-) {

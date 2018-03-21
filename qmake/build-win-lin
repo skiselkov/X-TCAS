@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # CDDL HEADER START
 #
@@ -34,13 +34,15 @@ fi
 NCPUS=$(( $(grep 'processor[[:space:]]\+:' /proc/cpuinfo  | wc -l) + 1 ))
 
 rm -rf release output
-mkdir -p output/64
+mkdir -p output/{win,lin}_x64
 
 make distclean > /dev/null
 qmake -set CROSS_COMPILE x86_64-w64-mingw32- && \
     qmake -spec win32-g++ && \
     make -j $NCPUS && \
-    mv release/win.xpl1.dll output/64/win.xpl
+    mv release/win.xpl1.dll output/win_x64/X-TCAS.xpl && \
+    "$LIBACFUTILS/tools/mksyms" output/win_x64/X-TCAS.xpl > \
+    output/win_x64/syms.txt
 if [ $? != 0 ] ; then
   exit
 fi
@@ -49,7 +51,7 @@ make distclean > /dev/null
 
 qmake -spec linux-g++-64 && \
     make -j $NCPUS && \
-    mv liblin.xpl.so output/64/lin.xpl
+    mv liblin.xpl.so output/lin_x64/X-TCAS.xpl
 if [ $? != 0 ] ; then
   exit
 fi
