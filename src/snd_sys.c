@@ -28,6 +28,7 @@
 #include <acfutils/assert.h>
 #include <acfutils/list.h>
 #include <acfutils/wav.h>
+#include <acfutils/safe_alloc.h>
 #include <acfutils/time.h>
 #include <acfutils/thread.h>
 
@@ -231,7 +232,7 @@ void xtcas_play_msgs(tcas_msg_t *msgs)
 
 		ASSERT3U(msg, <, RA_NUM_MSGS);
 		ASSERT(voice_msgs[msg].wav != NULL);
-		play = calloc(1, sizeof (*play));
+		play = safe_calloc(1, sizeof (*play));
 		play->mi = &voice_msgs[msg];
 		list_insert_tail(&cur_msgs, play);
 	}

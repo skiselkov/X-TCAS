@@ -36,6 +36,7 @@
 #include <acfutils/geom.h>
 #include <acfutils/helpers.h>
 #include <acfutils/perf.h>
+#include <acfutils/safe_alloc.h>
 #include <acfutils/thread.h>
 #include <acfutils/types.h>
 
@@ -257,7 +258,7 @@ xplane_test_update_contact(void *handle, void *acf_id, double rbrg,
 	mutex_enter(&contacts_lock);
 	ctc = avl_find(&contacts, &srch, &where);
 	if (ctc == NULL) {
-		ctc = calloc(1, sizeof (*ctc));
+		ctc = safe_calloc(1, sizeof (*ctc));
 		ctc->acf_id = acf_id;
 		avl_insert(&contacts, ctc, where);
 	}

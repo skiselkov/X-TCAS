@@ -29,6 +29,7 @@
 #include <acfutils/list.h>
 #include <acfutils/log.h>
 #include <acfutils/perf.h>
+#include <acfutils/safe_alloc.h>
 #include <acfutils/time.h>
 #include <acfutils/thread.h>
 
@@ -209,7 +210,7 @@ read_command_file(FILE *fp)
 			if (acf == NULL) {
 				acf = &my_acf;
 			} else {
-				acf = calloc(1, sizeof (*acf));
+				acf = safe_calloc(1, sizeof (*acf));
 				list_insert_tail(&other_acf, acf);
 			}
 			acf->id = acf_id++;
@@ -268,7 +269,7 @@ read_command_file(FILE *fp)
 				    "\"man\" must be preceded by \"acf\"\n");
 				return (B_FALSE);
 			}
-			man = calloc(1, sizeof (*man));
+			man = safe_calloc(1, sizeof (*man));
 			list_insert_tail(&acf->maneuvers, man);
 			if (fscanf(fp, "%lf", &man->d_t) != 1) {
 				fprintf(stderr, "Command file syntax error: "
@@ -315,7 +316,7 @@ read_command_file(FILE *fp)
 				return (B_FALSE);
 			}
 		} else if (strcmp(cmd, "auto") == 0) {
-			maneuver_t *man = calloc(1, sizeof (*man));
+			maneuver_t *man = safe_calloc(1, sizeof (*man));
 			if (acf == NULL || acf->id != 0) {
 				fprintf(stderr, "Command file syntax error: "
 				    "\"auto\" must be preceded by \"acf\" "
@@ -537,7 +538,7 @@ draw_gui(WINDOW *win)
 	tcas_filter_t filter;
 
 	getmaxyx(win, maxy, maxx);
-	buf = malloc(maxx);
+	buf = safe_malloc(maxx);
 	memset(buf, ' ', maxx);
 	for (int i = 0; i < maxy; i++) {
 		move(i, 0);
@@ -952,7 +953,7 @@ get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 	    acf = list_next(&other_acf, acf))
 		n++;
 	*num = n;
-	*pos_p = calloc(n, sizeof (acf_pos_t));
+	*pos_p = safe_calloc(n, sizeof (acf_pos_t));
 	for (acf_t *acf = list_head(&other_acf); acf != NULL;
 	    acf = list_next(&other_acf, acf)) {
 		acf_pos_t *pos = &(*pos_p)[i++];

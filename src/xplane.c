@@ -36,6 +36,7 @@
 #include <acfutils/log.h>
 #include <acfutils/helpers.h>
 #include <acfutils/perf.h>
+#include <acfutils/safe_alloc.h>
 #include <acfutils/types.h>
 #include <acfutils/thread.h>
 
@@ -284,7 +285,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 			}
 		} else {
 			if (pos == NULL) {
-				pos = calloc(1, sizeof (*pos));
+				pos = safe_calloc(1, sizeof (*pos));
 				pos->acf_id = (void *)(uintptr_t)(i + 1);
 				avl_insert(&acf_pos_tree, pos, where);
 			}
@@ -341,7 +342,7 @@ xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 
 	mutex_enter(&acf_pos_lock);
 	*num = avl_numnodes(&acf_pos_tree);
-	*pos_p = calloc(*num, sizeof (*pos));
+	*pos_p = safe_calloc(*num, sizeof (*pos));
 	for (pos = avl_first(&acf_pos_tree), i = 0; pos != NULL;
 	    pos = AVL_NEXT(&acf_pos_tree, pos), i++) {
 		ASSERT3U(i, <, *num);

@@ -28,6 +28,7 @@
 #include <acfutils/log.h>
 #include <acfutils/math.h>
 #include <acfutils/perf.h>
+#include <acfutils/safe_alloc.h>
 #include <acfutils/thread.h>
 #include <acfutils/time.h>
 
@@ -727,7 +728,7 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 			continue;
 
 		if (acf == NULL) {
-			acf = calloc(1, sizeof (*acf));
+			acf = safe_calloc(1, sizeof (*acf));
 			acf->acf_id = pos[i].acf_id;
 			acf->agl = NAN;
 			avl_insert(&other_acf_glob, acf, where);
@@ -803,7 +804,7 @@ copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy, bool_t test)
 	if (!test) {
 		for (tcas_acf_t *acf = avl_first(&other_acf_glob); acf != NULL;
 		    acf = AVL_NEXT(&other_acf_glob, acf)) {
-			tcas_acf_t *acf_copy = calloc(1, sizeof (*acf));
+			tcas_acf_t *acf_copy = safe_calloc(1, sizeof (*acf));
 			memcpy(acf_copy, acf, sizeof (*acf));
 			avl_add(other_acf_copy, acf_copy);
 		}
@@ -826,7 +827,7 @@ copy_acf_state(tcas_acf_t *my_acf_copy, avl_tree_t *other_acf_copy, bool_t test)
 
 #define	ADD_TEST_CONTACT(id, x_nm, y_nm, rel_alt_ft, trend, threat_lvl) \
 	do { \
-		tcas_acf_t *acf = calloc(1, sizeof (*acf)); \
+		tcas_acf_t *acf = safe_calloc(1, sizeof (*acf)); \
 		vect2_t v = vect2_rot(VECT2(NM2MET(x_nm), NM2MET(y_nm)), \
 		    my_acf_copy->hdg); \
 		acf->acf_id = (void *)id; \
@@ -921,7 +922,7 @@ static cpa_t *
 make_cpa(double d_t, tcas_acf_t *acf_a, tcas_acf_t *acf_b,
     vect3_t pos_a, vect3_t pos_b)
 {
-	cpa_t *cpa = calloc(1, sizeof (*cpa));
+	cpa_t *cpa = safe_calloc(1, sizeof (*cpa));
 
 	cpa->d_t = d_t;
 
@@ -1568,7 +1569,7 @@ ra_construct(const tcas_acf_t *my_acf, const tcas_RA_info_t *ri,
     avl_tree_t *cpas, const SL_t *sl, double delay_t, double accel,
     bool_t reversal)
 {
-	tcas_RA_t *ra = calloc(1, sizeof (*ra));
+	tcas_RA_t *ra = safe_calloc(1, sizeof (*ra));
 
 	ra->info = ri;
 	ra->cpas = cpas;
@@ -1975,7 +1976,7 @@ construct_RA_hints(avl_tree_t *RA_hints, avl_tree_t *RA_cpas)
 	    avl_numnodes(RA_cpas) == 0);
 	for (cpa_t *cpa = avl_first(RA_cpas); cpa != NULL;
 	    cpa = AVL_NEXT(RA_cpas, cpa)) {
-		tcas_RA_hint_t *hint = calloc(1, sizeof (*hint));
+		tcas_RA_hint_t *hint = safe_calloc(1, sizeof (*hint));
 		hint->acf_id = cpa->acf_b->acf_id;
 		hint->level = cpa->acf_b->threat;
 		ASSERT3U(hint->level, >=, RA_THREAT_PREV);
@@ -2003,7 +2004,7 @@ gts820_TA_play_msg(const tcas_acf_t *my_acf, const list_t *new_TA_threats)
 
 	i = 0;
 	n = (4 * list_count(new_TA_threats)) + 1;
-	msgs = calloc(n, sizeof (*msgs));
+	msgs = safe_calloc(n, sizeof (*msgs));
 	msgs[n - 1] = -1u;
 
 	for (tcas_acf_t *acf = list_head(new_TA_threats); acf != NULL;

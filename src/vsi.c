@@ -38,6 +38,7 @@
 #include <acfutils/avl.h>
 #include <acfutils/dr.h>
 #include <acfutils/perf.h>
+#include <acfutils/safe_alloc.h>
 #include <acfutils/thread.h>
 #include <acfutils/time.h>
 
@@ -1344,7 +1345,7 @@ vsi_update_contact(void *handle, void *acf_id, double rbrg, double rdist,
 
 	ctc = avl_find(&ctcs, &srch, &where);
 	if (ctc == NULL) {
-		ctc = calloc(1, sizeof (*ctc));
+		ctc = safe_calloc(1, sizeof (*ctc));
 		ctc->acf_id = acf_id;
 		avl_insert(&ctcs, ctc, where);
 	}
