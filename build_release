@@ -66,3 +66,7 @@ else
 	cp -r qmake/output/{win,lin}_x64 "$OUTPUT"
 fi
 cp -r $SNDSET/*.wav "$OUTPUT/data/msgs"
+
+if [[ "$VSI_STYLE" != 0 ]]; then
+	cp -r fonts "$OUTPUT/data/"
+fi

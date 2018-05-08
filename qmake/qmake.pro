@@ -42,6 +42,8 @@ DEFINES += _GNU_SOURCE DEBUG _FILE_OFFSET_BITS=64 _USE_MATH_DEFINES
 # Latest X-Plane APIs. No legacy support needed.
 DEFINES += XPLM200 XPLM210
 
+VSI_DRAW_MODE = $$[VSI_DRAW_MODE]
+
 DEFINES += VSI_DRAW_MODE=$$[VSI_DRAW_MODE] VSI_STYLE=$$[VSI_STYLE]
 DEFINES += GTS820_MODE=$$[GTS820_MODE]
 
@@ -59,6 +61,9 @@ win32 {
 	INCLUDEPATH += /usr/include/GL
 	QMAKE_DEL_FILE = rm -f
 	QMAKE_LFLAGS_RELEASE =
+}
+
+!contains(VSI_DRAW_MODE, 0) {
 }
 
 win32:contains(CROSS_COMPILE, x86_64-w64-mingw32-) {
@@ -130,3 +135,8 @@ SOURCES += \
 	../src/xplane.c \
 	../src/xplane_test.c \
 	../src/xtcas.c
+
+!contains(VSI_DRAW_MODE, 0) {
+	HEADERS += ../src/vsi.h
+	SOURCES += ../src/vsi.c
+}

@@ -68,6 +68,7 @@
 
 static bool_t intf_inited = B_FALSE;
 static bool_t xtcas_inited = B_FALSE;
+static bool_t standalone_mode UNUSED_ATTR;
 static bool_t standalone_mode = B_FALSE;
 static struct {
 	dr_t	time;

@@ -1185,12 +1185,13 @@ vsi_init(const char *plugindir)
 		dr_create_b(&vsi->fail_dr_name_dr, vsi->fail_dr_name,
 		    sizeof (vsi->fail_dr_name), B_TRUE,
 		    "xtcas/vsis/%d/fail_dr", i);
+		dr_create_i(&vsi->busnr_dr, (int *)&vsi->busnr, B_TRUE,
+		    "xtcas/vsis/%d/busnr", i);
 
 		mutex_init(&vsi->tex_lock);
 		vsi->cur_tex = -1;
 		vsi->brt = BRT_DFL;
 		vsi->scale_enum = VSI_SCALE_DFL;
-		vsi->busnr = i;
 
 		switch (i) {
 		case 0:
@@ -1234,6 +1235,13 @@ vsi_init(const char *plugindir)
 		if (conf_get_str(xtcas_conf, key, &s)) {
 			strlcpy(vsi->fail_dr_name, s,
 			    sizeof (vsi->fail_dr_name));
+		}
+
+		/* Allows overriding the electrical bus number */
+		snprintf(key, sizeof (key), "vsi/%d/busnr", i);
+		if (!conf_get_i(xtcas_conf, key, (int *)&vsi->vs_dr_fmt) ||
+		    vsi->busnr < 0 || vsi->busnr > MAX_BUSNR) {
+			vsi->busnr = i;
 		}
 
 		for (int j = 0; j < 2; j++) {
@@ -1332,7 +1340,7 @@ vsi_fini(void)
 
 void
 vsi_update_contact(void *handle, void *acf_id, double rbrg, double rdist,
-    double ralt, double vs, tcas_threat_t level)
+    double ralt, double vs, double trk, double gs, tcas_threat_t level)
 {
 	ctc_t *ctc;
 	const ctc_t srch = { .acf_id = acf_id };
@@ -1340,6 +1348,8 @@ vsi_update_contact(void *handle, void *acf_id, double rbrg, double rdist,
 
 	ASSERT(inited);
 	UNUSED(handle);
+	UNUSED(trk);
+	UNUSED(gs);
 
 	mutex_enter(&ctc_lock);
 
