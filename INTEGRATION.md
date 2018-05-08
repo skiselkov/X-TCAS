@@ -193,52 +193,52 @@ appropriate datarefs, or statically by using `X-TCAS.cfg` variables (the
 string '%d' in the names below is a number from 0 to 3 to define which
 instances of the VSI you wish to configure):
 
-* `xtcas/vsis/%d/x`: defines the X offset in the X-Plane panel texture
+* `xtcas/vsi/%d/x`: defines the X offset in the X-Plane panel texture
 where this VSI should be drawn (0 being the left edge and increasing to
-the right). Config file variable: `vsis/%d/x`.
-* `xtcas/vsis/%d/y`: defines the Y offset in the X-Plane panel texture
+the right). Config file variable: `vsi/%d/x`.
+* `xtcas/vsi/%d/y`: defines the Y offset in the X-Plane panel texture
 where this VSI should be drawn (0 being the bottom edge and increasing
-upward). Config file variable: `vsis/%d/y`.
-* `xtcas/vsis/%d/sz`: the pixel size of the VSI render in the X-Plane
+upward). Config file variable: `vsi/%d/y`.
+* `xtcas/vsi/%d/sz`: the pixel size of the VSI render in the X-Plane
 panel texture. This must be a positive number for X-TCAS to start
 rendering this VSI. Setting this value to zero disables this instance of
-the VSI. Config file variable: `vsis/%d/sz`.
-* `xtcas/vsis/%d/scale`: an enum value from 0 to 4 defining the range
+the VSI. Config file variable: `vsi/%d/sz`.
+* `xtcas/vsi/%d/scale`: an enum value from 0 to 4 defining the range
 scale being shown on the VSI. For ATR-style VSIs, these enum values
 correspond to the following ranges (in NM): 3, 6, 12, 24, 48. For
 Honeywell-style VSIs, these enum values correspond to the following
-ranges: 3, 5, 10, 20, 40. The config file variable `vsis/%d/scale`
+ranges: 3, 5, 10, 20, 40. The config file variable `vsi/%d/scale`
 defines the default scale that the VSI displays after bootup (by default
 scale '1', i.e. 6NM on the ATR-style VSI and 5NM on the Honeywell-style
 VSI).
-* `xtcas/vsis/%d/brt`: controls the brightness of the display. When you
+* `xtcas/vsi/%d/brt`: controls the brightness of the display. When you
 create a display dimming cockpit control for the VSI, bind it to this
 dataref. The value must be an integer from 0 to 100 (the default is 50).
-As with `vsis/%d/scale`, you can override the default brightness by
-setting the `vsis/%d/brt` variable in the X-TCAS configuration file.
-* `xtcas/vsis/%d/vs_src`: sets the vertical speed source dataref that
+As with `vsi/%d/scale`, you can override the default brightness by
+setting the `vsi/%d/brt` variable in the X-TCAS configuration file.
+* `xtcas/vsi/%d/vs_src`: sets the vertical speed source dataref that
 X-TCAS uses to determine the vertical speed that the VSI should indicate.
 The defaults are:
-   * `xtcas/vsis/0/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_pilot`
-   * `xtcas/vsis/1/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_copilot`
-   * `xtcas/vsis/2/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_pilot`
-   * `xtcas/vsis/3/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_copilot`
-* `xtcas/vsis/%d/vs_src_fmt`: controls the data format interpretation of
+   * `xtcas/vsi/0/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_pilot`
+   * `xtcas/vsi/1/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_copilot`
+   * `xtcas/vsi/2/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_pilot`
+   * `xtcas/vsi/3/vs_src`: `sim/cockpit2/gauges/indicators/vvi_fpm_copilot`
+* `xtcas/vsi/%d/vs_src_fmt`: controls the data format interpretation of
 the value of the dataref referenced from `vs_src`. The config file variable
-is `vsis/%d/vs_src_fmt`. The possible values are:
+is `vsi/%d/vs_src_fmt`. The possible values are:
    * `vs_src_fmt=0`: (the default) feet-per-minute
    * `vs_src_fmt=1`: meters-per-second
    * `vs_src_fmt=2`: feet-per-second
    * `vs_src_fmt=3`: meters-per-minute
-* `xtcas/vsis/%d/busnr`: defines which electrical bus powers this particular
+* `xtcas/vsi/%d/busnr`: defines which electrical bus powers this particular
 VSI (this is an index into `sim/cockpit2/electrical/bus_volts`). The VSI
 requires at least 22 Volts to operate. To disable the electrical check,
 set this value to an invalid bus number (e.g. a negative number).
-* `xtcas/vsis/%d/fail_dr`: defines which dataref is monitored by X-TCAS
+* `xtcas/vsi/%d/fail_dr`: defines which dataref is monitored by X-TCAS
 to determine if a particular VSI has failed. The referenced dataref must be
 in the X-Plane failure enum format. If the referenced dataref doesn't exist,
 X-TCAS ignores failures for this particular VSI. The default values are:
-   * `xtcas/vsis/0/fail_dr`: `sim/operation/failures/rel_ss_vvi`
-   * `xtcas/vsis/1/fail_dr`: `sim/operation/failures/rel_cop_vvi`
-   * `xtcas/vsis/2/fail_dr`: `sim/operation/failures/rel_ss_vvi`
-   * `xtcas/vsis/3/fail_dr`: `sim/operation/failures/rel_cop_vvi`
+   * `xtcas/vsi/0/fail_dr`: `sim/operation/failures/rel_ss_vvi`
+   * `xtcas/vsi/1/fail_dr`: `sim/operation/failures/rel_cop_vvi`
+   * `xtcas/vsi/2/fail_dr`: `sim/operation/failures/rel_ss_vvi`
+   * `xtcas/vsi/3/fail_dr`: `sim/operation/failures/rel_cop_vvi`

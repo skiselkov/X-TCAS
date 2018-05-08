@@ -1168,25 +1168,25 @@ vsi_init(const char *plugindir)
 		const char *s;
 
 		dr_create_i(&vsi->x_dr, (int *)&vsi->x, B_TRUE,
-		    "xtcas/vsis/%d/x", i);
+		    "xtcas/vsi/%d/x", i);
 		dr_create_i(&vsi->y_dr, (int *)&vsi->y, B_TRUE,
-		    "xtcas/vsis/%d/y", i);
+		    "xtcas/vsi/%d/y", i);
 		dr_create_i(&vsi->sz_dr, (int *)&vsi->sz, B_TRUE,
-		    "xtcas/vsis/%d/sz", i);
+		    "xtcas/vsi/%d/sz", i);
 		dr_create_i(&vsi->scale_enum_dr, (int *)&vsi->scale_enum,
-		    B_TRUE, "xtcas/vsis/%d/scale", i);
+		    B_TRUE, "xtcas/vsi/%d/scale", i);
 		dr_create_i(&vsi->brt_dr, (int *)&vsi->brt, B_TRUE,
-		    "xtcas/vsis/%d/brt", i);
+		    "xtcas/vsi/%d/brt", i);
 		dr_create_b(&vsi->vs_dr_name_dr, vsi->vs_dr_name,
 		    sizeof (vsi->vs_dr_name), B_TRUE,
-		    "xtcas/vsis/%d/vs_src", i);
+		    "xtcas/vsi/%d/vs_src", i);
 		dr_create_i(&vsi->vs_dr_fmt_dr, (int *)&vsi->vs_dr_fmt, B_TRUE,
-		    "xtcas/vsis/%d/vs_src_fmt", i);
+		    "xtcas/vsi/%d/vs_src_fmt", i);
 		dr_create_b(&vsi->fail_dr_name_dr, vsi->fail_dr_name,
 		    sizeof (vsi->fail_dr_name), B_TRUE,
-		    "xtcas/vsis/%d/fail_dr", i);
+		    "xtcas/vsi/%d/fail_dr", i);
 		dr_create_i(&vsi->busnr_dr, (int *)&vsi->busnr, B_TRUE,
-		    "xtcas/vsis/%d/busnr", i);
+		    "xtcas/vsi/%d/busnr", i);
 
 		mutex_init(&vsi->tex_lock);
 		vsi->cur_tex = -1;
