@@ -99,6 +99,8 @@ macx {
 	INCLUDEPATH += ../OpenAL/include
 	LIBS += -F../SDK/Libraries/Mac
 	LIBS += -framework XPLM -framework OpenAL -framework OpenGL
+	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-64 \
+	    --cflags")
 
 	# To make sure we run on everything that X-Plane 10 ran on
 	QMAKE_MACOSX_DEPLOYMENT_TARGET=10.6
