@@ -19,13 +19,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#if	IBM
-#include <gl.h>
-#elif	APL
-#include <OpenGL/gl.h>
-#else	/* LIN */
-#include <GL/gl.h>
-#endif	/* LIN */
+#include <GL/glew.h>
 
 #include <XPLMDisplay.h>
 #include <XPLMGraphics.h>

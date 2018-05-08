@@ -18,13 +18,7 @@
 
 #include <stddef.h>
 
-#if	IBM
-#include <gl.h>
-#elif	APL
-#include <OpenGL/gl.h>
-#else	/* LIN */
-#include <GL/gl.h>
-#endif	/* LIN */
+#include <GL/glew.h>
 
 #include <cairo.h>
 #include <cairo-ft.h>
@@ -37,6 +31,7 @@
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
 #include <acfutils/dr.h>
+#include <acfutils/mt_cairo_render.h>
 #include <acfutils/perf.h>
 #include <acfutils/safe_alloc.h>
 #include <acfutils/thread.h>
@@ -242,30 +237,6 @@ static bool_t xpdr_functional = B_FALSE;
 static FT_Library ft = NULL;
 static FT_Face font = NULL;
 static cairo_font_face_t *cr_font = NULL;
-
-/*
- * This weird macro construct is needed to implement freetype error code
- * to string translation. It defines a static ft_errors table that we can
- * traverse to translate an error code into a string.
- */
-#undef	FTERRORS_H_
-#define	FT_ERRORDEF(e, v, s)	{ e, s },
-#define	FT_ERROR_START_LIST	{
-#define	FT_ERROR_END_LIST	{ 0, NULL } };
-static const struct {
-	int		err_code;
-	const char	*err_msg;
-} ft_errors[] =
-#include FT_ERRORS_H
-
-static const char *
-ft_err2str(FT_Error err)
-{
-	for (int i = 0; ft_errors[i].err_msg != NULL; i++)
-		if (ft_errors[i].err_code == err)
-			return (ft_errors[i].err_msg);
-	return (NULL);
-}
 
 static int
 ctc_compar(const void *a, const void *b)
@@ -1128,25 +1099,6 @@ draw_vsis(XPLMDrawingPhase phase, int before, void *refcon)
 	return (1);
 }
 
-static bool_t
-try_load_font(const char *fontdir, const char *fontfile, FT_Face *font,
-    cairo_font_face_t **cr_font)
-{
-	char *fontpath = mkpathname(fontdir, fontfile, NULL);
-	FT_Error err;
-
-	if ((err = FT_New_Face(ft, fontpath, 0, font)) != 0) {
-		logMsg("Error loading font file %s: %s", fontpath,
-		    ft_err2str(err));
-		free(fontpath);
-		return (B_FALSE);
-	}
-	*cr_font = cairo_ft_font_face_create_for_ft_face(*font, 0);
-	free(fontpath);
-
-	return (B_TRUE);
-}
-
 bool_t
 vsi_init(const char *plugindir)
 {
@@ -1266,7 +1218,7 @@ vsi_init(const char *plugindir)
 		goto errout;
 	}
 	fontdir = mkpathname(plugindir, "data", "fonts", NULL);
-	if (!try_load_font(fontdir, FONT_FILE, &font, &cr_font)) {
+	if (!try_load_font(fontdir, FONT_FILE, ft, &font, &cr_font)) {
 		free(fontdir);
 		goto errout;
 	}
@@ -1373,6 +1325,7 @@ void vsi_delete_contact(void *handle, void *acf_id)
 	ctc_t *ctc;
 	const ctc_t srch = { .acf_id = acf_id };
 
+	ASSERT(inited);
 	UNUSED(handle);
 
 	mutex_enter(&ctc_lock);
@@ -1397,6 +1350,8 @@ vsi_update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
 	UNUSED(crossing);
 	UNUSED(reversal);
 	UNUSED(min_sep_cpa);
+
+	ASSERT(inited);
 
 	for (int i = 0; i < MAX_VSIS; i++) {
 		if (vsis[i].sz <= 0)

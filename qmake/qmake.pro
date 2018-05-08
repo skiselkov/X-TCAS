@@ -28,6 +28,7 @@ INCLUDEPATH += ../SDK
 # The ABI is X-Plane-internal and stable anyway.
 INCLUDEPATH += ../OpenAL/include
 INCLUDEPATH += $$[LIBACFUTILS]/src
+INCLUDEPATH += $$[LIBACFUTILS]/glew
 
 QMAKE_CFLAGS += -std=c99 -g -W -Wall -Wextra -Werror -fvisibility=hidden
 QMAKE_CFLAGS += -Wunused-result -DTEST_STANDALONE_BUILD=0

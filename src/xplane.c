@@ -32,6 +32,7 @@
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
 #include <acfutils/dr.h>
+#include <acfutils/except.h>
 #include <acfutils/geom.h>
 #include <acfutils/log.h>
 #include <acfutils/helpers.h>
@@ -51,6 +52,8 @@
 #if	!VSI_DRAW_MODE
 #include "xplane_test.h"
 #endif
+
+#define	EXCEPT_DEBUG
 
 #define	FLOOP_INTVAL			0.1
 #define	POS_UPDATE_INTVAL		0.1
@@ -619,6 +622,9 @@ XPluginStart(char *name, char *sig, char *desc)
 	char *snd_dir, *p;
 
 	log_init(XPLMDebugString, "xtcas");
+#ifdef	EXCEPT_DEBUG
+	except_init();
+#endif
 
 	/* Always use Unix-native paths on the Mac! */
 	XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
@@ -685,6 +691,9 @@ XPluginStop(void)
 {
 	xtcas_snd_sys_fini();
 	sim_intf_fini();
+#ifdef	EXCEPT_DEBUG
+	except_fini();
+#endif
 }
 
 PLUGIN_API int
