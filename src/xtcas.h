@@ -354,6 +354,7 @@ tcas_mode_t xtcas_get_mode(void);
 void xtcas_set_filter(tcas_filter_t filter);
 tcas_filter_t xtcas_get_filter(void);
 int xtcas_get_SL(void);
+void xtcas_set_has_RA(bool_t flag);
 
 void xtcas_test(bool_t force_fail);
 bool_t xtcas_test_is_in_prog(void);

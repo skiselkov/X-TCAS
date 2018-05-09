@@ -129,6 +129,7 @@ typedef struct tcas_acf {
 	bool_t	up_to_date;	/* used for efficient position updates */
 	bool_t	on_ground;	/* on-ground condition */
 	bool_t	gear_ext;	/* gear is extended */
+	bool_t	has_RA;		/* has radio altimeter, modifies GTS820 */
 	cpa_t	*cpa;		/* CPA this aircraft participates in */
 	bool_t	slow_closure;	/* for RA threats that are closing in slow */
 	tcas_threat_t	threat;	/* type of TCAS threat */
@@ -2134,6 +2135,7 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		}
 
 		if (ra != NULL) {
+			bool_t inhibit_audio;
 			if (out_ops != NULL &&
 			    out_ops->update_RA_prediction != NULL) {
 				out_ops->update_RA_prediction(out_ops->handle,
@@ -2157,8 +2159,17 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				msg = RA_msg_sequence_check(prev_msg,
 				    ra->reversal ? ra->info->rev_msg :
 				    ra->info->msg);
-				if ((int)msg != -1 &&
-				    my_acf->agl > INHIBIT_AUDIO) {
+#if	GTS820_MODE
+				if (my_acf->has_RA) {
+					inhibit_audio =
+					    my_acf->agl < INHIBIT_AUDIO;
+				} else {
+					inhibit_audio = my_acf->gear_ext;
+				}
+#else	/* !GTS820_MODE */
+				inhibit_audio = my_acf->agl < INHIBIT_AUDIO;
+#endif	/* !GTS820_MODE */
+				if ((int)msg != -1 && !inhibit_audio) {
 					xtcas_play_msg(msg);
 				}
 				if (ra->info->type == RA_TYPE_CORRECTIVE) {
@@ -2414,7 +2425,7 @@ main_loop(void *ignored)
 #else
 			    tcas_state.mode == TCAS_MODE_TAONLY ? 2 : 0,
 #endif
-			    my_acf.gear_ext);
+			    !my_acf.has_RA && my_acf.gear_ext);
 			dbg_log(sl, 1, "SL: %d", sl->SL_id);
 			xtcas_SL = sl->SL_id;
 		}
@@ -2586,6 +2597,14 @@ int
 xtcas_get_SL(void)
 {
 	return (xtcas_SL);
+}
+
+void
+xtcas_set_has_RA(bool_t flag)
+{
+	mutex_enter(&acf_lock);
+	my_acf_glob.has_RA = flag;
+	mutex_exit(&acf_lock);
 }
 
 void
