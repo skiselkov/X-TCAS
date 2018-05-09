@@ -93,6 +93,7 @@ if(APPLE)
 endif()
 
 include_directories(bp PUBLIC "${LIBACFUTILS}/src")
+include_directories(bp PUBLIC "${LIBACFUTILS}/glew")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DXPLM200=1 -DXPLM210=1")
 if(APPLE)
