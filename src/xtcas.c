@@ -2602,10 +2602,10 @@ xtcas_get_SL(void)
 void
 xtcas_set_has_RA(bool_t flag)
 {
-	if (!inited)
+	if (inited)
 		mutex_enter(&acf_lock);
 	my_acf_glob.has_RA = flag;
-	if (!inited)
+	if (inited)
 		mutex_exit(&acf_lock);
 }
 
