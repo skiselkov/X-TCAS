@@ -24,9 +24,6 @@ VERSION = 1.0.0
 
 INCLUDEPATH += ../SDK/CHeaders/XPLM
 INCLUDEPATH += ../SDK
-# Always just use the shipped OpenAL headers for predictability.
-# The ABI is X-Plane-internal and stable anyway.
-INCLUDEPATH += ../OpenAL/include
 INCLUDEPATH += $$[LIBACFUTILS]/src
 INCLUDEPATH += $$[LIBACFUTILS]/glew
 
@@ -69,13 +66,13 @@ win32 {
 
 win32:contains(CROSS_COMPILE, x86_64-w64-mingw32-) {
 	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-64 \
-	    --cflags")
+	    --static-openal --cflags")
 
 	# This must go first so GCC finds the deps in the latter libraries
 	LIBS += -L $$[LIBACFUTILS]/qmake/win64 -lacfutils
-	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-64 --libs")
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps win-64 \
+	    --static-openal --libs")
 	LIBS += -lXPLM_64
-	LIBS += -L../OpenAL/libs/Win64 -lOpenAL32
 	LIBS += -L../GL_for_Windows/lib -lopengl32
 	LIBS += -ldbghelp
 }
@@ -88,19 +85,20 @@ unix:!macx {
 
 linux-g++-64 {
 	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-64 \
-	    --cflags")
+	    --static-openal --cflags")
 	LIBS += -L $$[LIBACFUTILS]/qmake/lin64 -lacfutils
-	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-64 --libs")
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps linux-64 \
+	    --static-openal --libs")
 }
 
 macx {
 	DEFINES += APL=1 IBM=0 LIN=0
 	TARGET = mac.xpl
-	INCLUDEPATH += ../OpenAL/include
 	LIBS += -F../SDK/Libraries/Mac
-	LIBS += -framework XPLM -framework OpenAL -framework OpenGL
+	LIBS += -framework XPLM -framework OpenGL -framework AudioToolbox
+	LIBS += -framework CoreAudio -framework AudioUnit
 	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-64 \
-	    --cflags")
+	    --static-openal --cflags")
 
 	# To make sure we run on everything that X-Plane 10 ran on
 	QMAKE_MACOSX_DEPLOYMENT_TARGET=10.6
@@ -113,7 +111,8 @@ macx {
 }
 
 macx-clang {
-	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-64 --libs")
+	LIBS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-64 \
+	    --static-openal --libs")
 	LIBS += -L$$[LIBACFUTILS]/qmake/mac64 -lacfutils
 }
 
