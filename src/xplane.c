@@ -16,6 +16,7 @@
  * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
+#include <ctype.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -98,6 +99,9 @@ static struct {
 	dr_t	filter_req;
 	dr_t	filter_act;
 	dr_t	fail_dr_name_dr;
+
+	/* provided by 3rd party */
+	dr_t	custom_bus_dr;
 } drs;
 
 static struct {
@@ -120,6 +124,8 @@ static char plugindir[512] = { 0 };
 
 static int busnr = BUSNR_DFL;
 static float min_volts = MIN_VOLTS_DFL;
+static char custom_bus_name[128] = { 0 };
+static bool_t custom_bus = B_FALSE;
 static int mode_req = -1;
 static int mode_act = -1;
 static int filter_req = -1;
@@ -460,6 +466,14 @@ xtcas_is_powered(void)
 
 	if (dr_geti(&drs.xpdr_mode) == 0) {
 		powered = B_FALSE;
+	} else if (custom_bus_name[0] != '\0') {
+		/* allow late resolution of custom bus name */
+		if (!custom_bus) {
+			custom_bus = dr_find(&drs.custom_bus_dr, "%s",
+			    custom_bus_name);
+		}
+		if (custom_bus)
+			powered = (dr_getf(&drs.custom_bus_dr) >= min_volts);
 	} else if (min_volts > 0 && busnr >= 0 && busnr < BUSNR_MAX) {
 		double volts;
 		VERIFY3S(dr_getvf(&drs.bus_volts, &volts, busnr, 1), ==, 1);
@@ -468,6 +482,7 @@ xtcas_is_powered(void)
 
 	return (powered);
 #else	/* !VSI_DRAW_MODE */
+	UNUSED(custom_bus);
 	return (B_TRUE);
 #endif
 }
@@ -484,6 +499,12 @@ xtcas_is_failed(void)
 		    dr_geti(&drs.altm_fail) == 6 ||
 		    dr_geti(&drs.adc_fail) == 6);
 	}
+}
+
+double
+xtcas_min_volts(void)
+{
+	return (min_volts);
 }
 
 static int
@@ -717,7 +738,12 @@ XPluginEnable(void)
 	dr_create_b(&drs.fail_dr_name_dr, fail_dr_name, sizeof (fail_dr_name),
 	    B_TRUE, "xtcas/fail_dr");
 
-	conf_get_i(xtcas_conf, "busnr", &busnr);
+	if (conf_get_str(xtcas_conf, "busnr", &s) && strlen(s) > 3 &&
+	    !isdigit(s[0])) {
+		strlcpy(custom_bus_name, s, sizeof (custom_bus_name));
+	} else {
+		conf_get_i(xtcas_conf, "busnr", &busnr);
+	}
 	conf_get_f(xtcas_conf, "min_volts", &min_volts);
 	if (conf_get_str(xtcas_conf, "fail_dr", &s))
 		strlcpy(fail_dr_name, s, sizeof (fail_dr_name));

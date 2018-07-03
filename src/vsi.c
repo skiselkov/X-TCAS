@@ -16,6 +16,7 @@
  * Copyright 2017 Saso Kiselkov. All rights reserved.
  */
 
+#include <ctype.h>
 #include <stddef.h>
 
 #include <GL/glew.h>
@@ -45,7 +46,6 @@
 #define	VSI_RING_DELAY		4
 #define	VSI_IND_DELAY		6
 #define	VSI_TCAS_DELAY		8
-#define	MIN_VOLTS		22
 #define	MAX_BUSNR		6
 #define	BRT_DFL			50
 
@@ -125,6 +125,10 @@ typedef struct {
 
 	int		busnr;
 	dr_t		busnr_dr;
+
+	bool_t		custom_bus;
+	char		custom_bus_name[128];
+	dr_t		custom_bus_dr;
 
 	bool_t		functional;
 	bool_t		running;
@@ -1029,11 +1033,26 @@ vsi_drs_update(vsi_t *vsi)
 	if (strcmp(vsi->fail_dr.name, "") != 0)
 		failed = (dr_geti(&vsi->fail_dr) == 6);
 
-	if (vsi->busnr >= 0 && vsi->busnr < MAX_BUSNR) {
+	if (vsi->custom_bus_name[0] != '\0') {
+		/*
+		 * If the configuration supplied a dataref name, try to
+		 * look it up (delayed dataref lookup to avoid plugin
+		 * loading issues).
+		 */
+		if (!vsi->custom_bus) {
+			vsi->custom_bus = dr_find(&vsi->custom_bus_dr, "%s",
+			    vsi->custom_bus_name);
+		}
+		if (vsi->custom_bus) {
+			/* Custom bus lookup ok */
+			powered = (dr_getf(&vsi->custom_bus_dr) >=
+			    xtcas_min_volts());
+		}
+	} else if (vsi->busnr >= 0 && vsi->busnr < MAX_BUSNR) {
 		double volts;
 
 		VERIFY3S(dr_getvf(&bus_volts, &volts, vsi->busnr, 1), ==, 1);
-		powered = (volts >= MIN_VOLTS);
+		powered = (volts >= xtcas_min_volts());
 	}
 	vsi->functional = (!failed && powered);
 
@@ -1116,7 +1135,6 @@ vsi_init(const char *plugindir)
 	memset(vsis, 0, sizeof (vsis));
 	for (int i = 0; i < MAX_VSIS; i++) {
 		vsi_t *vsi = &vsis[i];
-		char key[64];
 		const char *s;
 
 		dr_create_i(&vsi->x_dr, (int *)&vsi->x, B_TRUE,
@@ -1166,32 +1184,33 @@ vsi_init(const char *plugindir)
 			break;
 		}
 
-		snprintf(key, sizeof (key), "vsi/%d/x", i);
-		conf_get_i(xtcas_conf, key, (int *)&vsi->x);
-		snprintf(key, sizeof (key), "vsi/%d/y", i);
-		conf_get_i(xtcas_conf, key, (int *)&vsi->y);
-		snprintf(key, sizeof (key), "vsi/%d/sz", i);
-		conf_get_i(xtcas_conf, key, (int *)&vsi->sz);
+		conf_get_i_v(xtcas_conf, "vsi/%d/x", (int *)&vsi->x, i);
+		conf_get_i_v(xtcas_conf, "vsi/%d/y", (int *)&vsi->y, i);
+		conf_get_i_v(xtcas_conf, "vsi/%d/sz", (int *)&vsi->sz, i);
 		vsi->sz = MIN(vsi->sz, MAX_SZ);
-		snprintf(key, sizeof (key), "vsi/%d/brt", i);
-		conf_get_i(xtcas_conf, key, (int *)&vsi->brt);
-		snprintf(key, sizeof (key), "vsi/%d/scale", i);
-		conf_get_i(xtcas_conf, key, &vsi->scale_enum);
+		conf_get_i_v(xtcas_conf, "vsi/%d/brt", (int *)&vsi->brt, i);
+		conf_get_i_v(xtcas_conf, "vsi/%d/scale", &vsi->scale_enum, i);
 		vsi->scale_enum = MIN(vsi->scale_enum, VSI_NUM_SCALES - 1);
-		snprintf(key, sizeof (key), "vsi/%d/vs_src", i);
-		if (conf_get_str(xtcas_conf, key, &s))
+		if (conf_get_str_v(xtcas_conf, "vsi/%d/vs_src", &s, i))
 			strlcpy(vsi->vs_dr_name, s, sizeof (vsi->vs_dr_name));
-		snprintf(key, sizeof (key), "vsi/%d/vs_src_fmt", i);
-		conf_get_i(xtcas_conf, key, (int *)&vsi->vs_dr_fmt);
-		snprintf(key, sizeof (key), "vsi/%d/fail_dr", i);
-		if (conf_get_str(xtcas_conf, key, &s)) {
+		conf_get_i_v(xtcas_conf, "vsi/%d/vs_src_fmt",
+		    (int *)&vsi->vs_dr_fmt, i);
+		if (conf_get_str_v(xtcas_conf, "vsi/%d/fail_dr", &s, i)) {
 			strlcpy(vsi->fail_dr_name, s,
 			    sizeof (vsi->fail_dr_name));
 		}
 
-		/* Allows overriding the electrical bus number */
-		snprintf(key, sizeof (key), "vsi/%d/busnr", i);
-		if (!conf_get_i(xtcas_conf, key, (int *)&vsi->vs_dr_fmt) ||
+		/*
+		 * Allows overriding the electrical bus number.
+		 * If the user provided a dataref name instead of a bus
+		 * 
+		 */
+		if (conf_get_str_v(xtcas_conf, "vsi/%d/busnr", &s, i) &&
+		    strlen(s) > 3 && !isdigit(s[0])) {
+			strlcpy(vsi->custom_bus_name, s,
+			    sizeof (vsi->custom_bus_name));
+		} else if (!conf_get_i_v(xtcas_conf, "vsi/%d/busnr",
+		    (int *)&vsi->vs_dr_fmt, i) ||
 		    vsi->busnr < 0 || vsi->busnr > MAX_BUSNR) {
 			vsi->busnr = i;
 		}

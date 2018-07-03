@@ -49,6 +49,7 @@ extern const conf_t *xtcas_conf;
 
 bool_t xtcas_is_powered(void);
 bool_t xtcas_is_failed(void);
+double xtcas_min_volts(void);
 
 void generic_set_mode(tcas_mode_t mode);
 void generic_set_filter(tcas_filter_t filter);
