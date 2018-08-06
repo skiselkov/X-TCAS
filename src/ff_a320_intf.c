@@ -63,6 +63,7 @@ typedef struct {
 	double		rdist;
 	double		ralt;
 	double		vs;
+	double		trk;
 	tcas_threat_t	level;
 	avl_node_t	node;
 } contact_t;
@@ -98,6 +99,7 @@ static struct {
 	int		intr_rdist;
 	int		intr_ralt;
 	int		intr_trend;
+	int		intr_trk;
 } ids;
 
 static dr_t magvar_dr;
@@ -354,6 +356,7 @@ ff_a320_ids_init(void)
 	ids.intr_rdist = val_id("Aircraft.Navigation.TCAS.RelDistance");
 	ids.intr_ralt = val_id("Aircraft.Navigation.TCAS.RelAltitude");
 	ids.intr_trend = val_id("Aircraft.Navigation.TCAS.Trend");
+	ids.intr_trk = val_id("Aircraft.Navigation.TCAS.Track");
 
 	ids.sys_state = val_id("Aircraft.Navigation.TCAS.State");
 	ids.adv_type = val_id("Aircraft.Navigation.TCAS.Advisory");
@@ -493,6 +496,7 @@ ff_a320_update(double step, void *tag)
 				sets32(ids.intr_trend, -1);
 			else
 				sets32(ids.intr_trend, 0);
+			setf32(ids.intr_trk, ctc->trk);
 
 			break;
 		} else if (ctc->deleted) {
@@ -519,7 +523,6 @@ update_contact(void *handle, void *acf_id, double rbrg, double rdist,
 	avl_index_t where;
 
 	UNUSED(handle);
-	UNUSED(trk);
 	UNUSED(gs);
 
 	dbg_log(ff_a320, 2, "update_contact acf_id:%p rpos:%.0fx%.0fx%.0f "
@@ -553,6 +556,7 @@ update_contact(void *handle, void *acf_id, double rbrg, double rdist,
 	ctc->ralt = ralt;
 	ctc->vs = vs;
 	ctc->level = level;
+	ctc->trk = trk;
 	mutex_exit(&lock);
 }
 
