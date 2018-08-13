@@ -54,8 +54,6 @@
 #include "xplane_test.h"
 #endif
 
-#define	EXCEPT_DEBUG
-
 #define	FLOOP_INTVAL			0.1
 #define	POS_UPDATE_INTVAL		0.1
 #define	STARTUP_DELAY			5.0	/* seconds */
