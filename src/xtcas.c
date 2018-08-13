@@ -55,6 +55,8 @@
 #define	CROSSING_RA_PENALTY	0.125		/* multiplier */
 #define	REVERSAL_RA_PENALTY	0.125		/* multiplier */
 
+#define	FALSE_CTC_SUPPRESS_GS	2		/* m/s */
+
 #define	LONG_VERT_FILTER	FEET2MET(9900)	/* Used for the ABV and BLW */
 #define	NORM_VERT_FILTER	FEET2MET(2700)	/* vertical filter modes */
 
@@ -1002,7 +1004,7 @@ compute_CPAs(avl_tree_t *cpas, tcas_acf_t *my_acf, avl_tree_t *other_acf)
 		 * 3) Fall outside of our maximum vertical filter boundaries.
 		 */
 		if (!acf->trend_data_ready || !my_acf->trend_data_ready ||
-		    acf->gs == 0 || ABS(acf->cur_pos.elev -
+		    acf->gs < FALSE_CTC_SUPPRESS_GS || ABS(acf->cur_pos.elev -
 		    my_acf->cur_pos.elev) > LONG_VERT_FILTER)
 			continue;
 
@@ -2276,6 +2278,18 @@ static void
 update_contacts(tcas_acf_t *my_acf, avl_tree_t *other_acf, bool_t test)
 {
 	vect2_t my_pos_2d = VECT3_TO_VECT2(my_acf->cur_pos_3d);
+
+	/*
+	 * Badly behaved multiplayer plugins such as XSquawkBox tend not
+	 * to delete unused multiplayer aircraft, so they just sit in
+	 * space, stationary. Detect and remove those.
+	 */
+	for (tcas_acf_t *acf = avl_first(other_acf); acf != NULL;
+	    acf = AVL_NEXT(other_acf, acf)) {
+		if (acf->gs < FALSE_CTC_SUPPRESS_GS && !test &&
+		    out_ops != NULL)
+			out_ops->delete_contact(out_ops->handle, acf->acf_id);
+	}
 
 	if (tcas_state.filter == TCAS_FILTER_THRT &&
 	    tcas_state.adv_state == ADV_STATE_NONE && !test) {
