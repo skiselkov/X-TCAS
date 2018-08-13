@@ -620,7 +620,7 @@ draw_contacts(vsi_t *vsi, vsi_tex_t *tex)
 			break;
 		}
 
-		if (ctc->vs >= LEVEL_VVEL_THRESH) {
+		if (ctc->vs <= -LEVEL_VVEL_THRESH) {
 			cairo_move_to(tex->cr, X(p.x + CTC_SZ * 0.8),
 			    X(p.y - CTC_SZ / 2));
 			cairo_rel_line_to(tex->cr, 0, X(CTC_SZ));
@@ -631,7 +631,7 @@ draw_contacts(vsi_t *vsi, vsi_tex_t *tex)
 			cairo_rel_line_to(tex->cr, X(CTC_SZ * 0.2),
 			    X(-CTC_SZ * 0.3));
 			cairo_stroke(tex->cr);
-		} else if (ctc->vs <= -LEVEL_VVEL_THRESH) {
+		} else if (ctc->vs >= LEVEL_VVEL_THRESH) {
 			cairo_move_to(tex->cr, X(p.x + CTC_SZ * 0.8),
 			    X(p.y - CTC_SZ / 2));
 			cairo_rel_line_to(tex->cr, 0, X(CTC_SZ));
