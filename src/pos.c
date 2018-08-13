@@ -81,8 +81,8 @@ xtcas_obj_pos_get_gs(const obj_pos_t *pos, double *gs)
 	p2_2d = pos->pos[STEP_BACK(pos->latest_step)];
 	p2_2d.elev = 0;
 
-	p1 = geo2ecef(p1_2d, &wgs84);
-	p2 = geo2ecef(p2_2d, &wgs84);
+	p1 = geo2ecef_ft(p1_2d, &wgs84);
+	p2 = geo2ecef_ft(p2_2d, &wgs84);
 	dt1 = pos->time[pos->latest_step] -
 	    pos->time[STEP_BACK(pos->latest_step)];
 	if (gs != NULL) {
