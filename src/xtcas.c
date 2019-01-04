@@ -2336,6 +2336,8 @@ main_loop(void *ignored)
 	double last_t = in_ops->get_time(in_ops->handle);
 	avl_tree_t RA_hints;
 
+	thread_set_name("X-TCAS");
+
 	dbg_log(tcas, 4, "main_loop: entry (%.1f)", last_t);
 
 	UNUSED(ignored);
