@@ -93,7 +93,7 @@ if(APPLE)
 endif()
 
 include_directories(bp PUBLIC "${LIBACFUTILS}/src")
-include_directories(bp PUBLIC "${LIBACFUTILS}/glew")
+include_directories(bp PUBLIC "${LIBACFUTILS}/glew/glew-1.13.0-linux-64/install/include")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DXPLM200=1 -DXPLM210=1")
 if(APPLE)

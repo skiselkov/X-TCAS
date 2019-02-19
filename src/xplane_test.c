@@ -19,8 +19,6 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#include <GL/glew.h>
-
 #include <XPLMDisplay.h>
 #include <XPLMGraphics.h>
 
@@ -28,6 +26,7 @@
 #include <acfutils/avl.h>
 #include <acfutils/dr.h>
 #include <acfutils/geom.h>
+#include <acfutils/glew.h>
 #include <acfutils/helpers.h>
 #include <acfutils/perf.h>
 #include <acfutils/safe_alloc.h>

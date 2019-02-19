@@ -19,8 +19,6 @@
 #include <ctype.h>
 #include <stddef.h>
 
-#include <GL/glew.h>
-
 #include <cairo.h>
 #include <cairo-ft.h>
 #include <ft2build.h>
@@ -32,6 +30,7 @@
 #include <acfutils/assert.h>
 #include <acfutils/avl.h>
 #include <acfutils/dr.h>
+#include <acfutils/glew.h>
 #include <acfutils/mt_cairo_render.h>
 #include <acfutils/perf.h>
 #include <acfutils/safe_alloc.h>
