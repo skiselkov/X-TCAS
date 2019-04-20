@@ -35,6 +35,7 @@
 #include <acfutils/dr.h>
 #include <acfutils/except.h>
 #include <acfutils/geom.h>
+#include <acfutils/glew.h>
 #include <acfutils/log.h>
 #include <acfutils/helpers.h>
 #include <acfutils/perf.h>
@@ -854,3 +855,14 @@ generic_set_filter(tcas_filter_t filter)
 {
 	filter_req = filter;
 }
+
+#if	IBM
+BOOL WINAPI
+DllMain(HINSTANCE hinst, DWORD reason, LPVOID resvd)
+{
+	UNUSED(hinst);
+	UNUSED(resvd);
+	lacf_glew_dllmain_hook(reason);
+	return (TRUE);
+}
+#endif	/* IBM */
