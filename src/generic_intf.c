@@ -38,7 +38,7 @@ static tcas_mode_t generic_get_mode(void);
 static tcas_filter_t generic_get_filter(void);
 static void generic_test(bool_t force_fail);
 static bool_t generic_test_is_in_prog(void);
-static void generic_set_output_ops(sim_intf_output_ops_t *ops);
+static void generic_set_output_ops(const sim_intf_output_ops_t *ops);
 
 static sim_intf_output_ops_t my_ops = {
     .handle = NULL,
@@ -53,7 +53,7 @@ static sim_intf_output_ops_t my_ops = {
  * ignore their requests.
  */
 static bool_t inited = B_FALSE;
-static sim_intf_output_ops_t *out_ops = NULL;
+static const sim_intf_output_ops_t *out_ops = NULL;
 static mutex_t out_ops_lock;
 
 static xtcas_generic_intf_t generic_ops = {
@@ -198,7 +198,7 @@ generic_test_is_in_prog(void)
 }
 
 static void
-generic_set_output_ops(sim_intf_output_ops_t *ops)
+generic_set_output_ops(const sim_intf_output_ops_t *ops)
 {
 	if (!inited)
 		return;
