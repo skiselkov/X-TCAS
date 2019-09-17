@@ -89,6 +89,7 @@ static struct {
 	dr_t	altm_fail;
 	dr_t	adc_fail;
 	dr_t	gear_deploy;
+	dr_t	on_ground;
 
 	/* our datarefs */
 	dr_t	busnr;
@@ -115,6 +116,7 @@ static geo_pos3_t my_acf_pos;
 static double my_acf_agl = 0;
 static double my_acf_hdg = 0;
 static bool_t my_acf_gear_ext = B_FALSE;
+static bool_t my_acf_on_ground = B_FALSE;
 static double last_pos_collected = 0;
 static double cur_sim_time = 0;
 static double first_sim_time = 0;
@@ -136,7 +138,7 @@ conf_t *conf = NULL;
 
 static double xp_get_time(void *handle);
 static void xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl,
-    double *hdg, bool_t *gear_ext);
+    double *hdg, bool_t *gear_ext, bool_t *on_ground);
 static void xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num);
 
 static int tcas_config_handler(XPLMCommandRef, XPLMCommandPhase, void *);
@@ -250,6 +252,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 
 	double now;
 	double gear_deploy[2];
+	int on_ground[3];
 
 	/* grab updates only at a set interval */
 	now = xp_get_time(NULL);
@@ -264,8 +267,11 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	my_acf_agl = FEET2MET(dr_getf(&drs.rad_alt_ft));
 	my_acf_hdg = dr_getf(&drs.hdg);
 	/* Two gear check should suffice - you're not landing on just one! */
-	dr_getvf(&drs.gear_deploy, gear_deploy, 0, 2);
+	VERIFY3S(dr_getvf(&drs.gear_deploy, gear_deploy, 0, 2), ==, 2);
 	my_acf_gear_ext = (gear_deploy[0] != 0.0 || gear_deploy[1] != 0.0);
+	VERIFY3S(dr_getvi(&drs.on_ground, on_ground, 0, 3), ==, 3);
+	my_acf_on_ground = (on_ground[0] != 0 || on_ground[1] != 0 ||
+	    on_ground[2] != 0);
 
 	/* grab all other aircraft positions */
 	for (int i = 0; i < MAX_MP_PLANES; i++) {
@@ -328,7 +334,7 @@ xp_get_time(void *handle)
  */
 static void
 xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl, double *hdg,
-    bool_t *gear_ext)
+    bool_t *gear_ext, bool_t *on_ground)
 {
 	UNUSED(handle);
 	ASSERT(intf_inited);
@@ -336,6 +342,7 @@ xp_get_my_acf_pos(void *handle, geo_pos3_t *pos, double *alt_agl, double *hdg,
 	*alt_agl = my_acf_agl;
 	*hdg = my_acf_hdg;
 	*gear_ext = my_acf_gear_ext;
+	*on_ground = my_acf_on_ground;
 }
 
 /*
@@ -753,6 +760,7 @@ XPluginEnable(void)
 	fdr_find(&drs.altm_fail, "sim/operation/failures/rel_g_alt");
 	fdr_find(&drs.adc_fail, "sim/operation/failures/rel_adc_comp");
 	fdr_find(&drs.gear_deploy, "sim/aircraft/parts/acf_gear_deploy");
+	fdr_find(&drs.on_ground, "sim/flightmodel2/gear/on_ground");
 
 #if	VSI_DRAW_MODE
 	if (!vsi_init(plugindir)) {

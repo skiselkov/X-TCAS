@@ -131,7 +131,8 @@ typedef struct tcas_acf {
 	bool_t	up_to_date;	/* used for efficient position updates */
 	bool_t	on_ground;	/* on-ground condition */
 	bool_t	gear_ext;	/* gear is extended */
-	bool_t	has_RA;		/* has radio altimeter, modifies GTS820 */
+	bool_t	has_RA;		/* has radio altimeter? */
+	bool_t	has_WOW;	/* has weight-on-wheels switch? */
 	cpa_t	*cpa;		/* CPA this aircraft participates in */
 	bool_t	slow_closure;	/* for RA threats that are closing in slow */
 	tcas_threat_t	threat;	/* type of TCAS threat */
@@ -499,7 +500,10 @@ static const tcas_RA_info_t RA_info[NUM_RA_INFOS] = {
 };
 
 static mutex_t acf_lock;
-static tcas_acf_t my_acf_glob;
+static tcas_acf_t my_acf_glob = {
+    .has_RA = B_TRUE,
+    .has_WOW = B_TRUE
+};
 static avl_tree_t other_acf_glob;
 static double last_collect_t = 0;
 static tcas_state_t tcas_state;
@@ -651,7 +655,8 @@ static void
 update_my_position(double t)
 {
 	in_ops->get_my_acf_pos(in_ops->handle, &my_acf_glob.cur_pos,
-	    &my_acf_glob.agl, &my_acf_glob.hdg, &my_acf_glob.gear_ext);
+	    &my_acf_glob.agl, &my_acf_glob.hdg, &my_acf_glob.gear_ext,
+	    &my_acf_glob.on_ground);
 	my_acf_glob.cur_pos_3d = VECT3(0, 0, my_acf_glob.cur_pos.elev);
 	xtcas_obj_pos_update(&my_acf_glob.pos_upd, t, my_acf_glob.cur_pos,
 	    my_acf_glob.agl);
@@ -664,6 +669,15 @@ update_my_position(double t)
 		my_acf_glob.trk_v = vect2_set_abs(hdg2dir(my_acf_glob.trk),
 		    my_acf_glob.gs);
 	}
+
+	/*
+	 * If we don't have an RA, invalidate our height. This makes
+	 * any check involving our height fail.
+	 */
+	if (!my_acf_glob.has_RA)
+		my_acf_glob.agl = NAN;
+	if (!my_acf_glob.has_WOW)
+		my_acf_glob.on_ground = B_FALSE;
 
 	dbg_log(contact, 1, "my_pos: " PRINTF_ACF_FMT,
 	    PRINTF_ACF_ARGS(&my_acf_glob));
@@ -2163,13 +2177,18 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				    ra->info->msg);
 #if	GTS820_MODE
 				if (my_acf->has_RA) {
-					inhibit_audio =
-					    my_acf->agl < INHIBIT_AUDIO;
+					inhibit_audio = (my_acf->agl <
+					    INHIBIT_AUDIO || my_acf->on_ground);
 				} else {
 					inhibit_audio = my_acf->gear_ext;
 				}
 #else	/* !GTS820_MODE */
-				inhibit_audio = my_acf->agl < INHIBIT_AUDIO;
+				/*
+				 * In case the RA fails, we use the strut
+				 * switch.
+				 */
+				inhibit_audio = (my_acf->agl < INHIBIT_AUDIO ||
+				    my_acf->on_ground);
 #endif	/* !GTS820_MODE */
 				if ((int)msg != -1 && !inhibit_audio) {
 					xtcas_play_msg(msg);
@@ -2621,6 +2640,16 @@ xtcas_set_has_RA(bool_t flag)
 	if (inited)
 		mutex_enter(&acf_lock);
 	my_acf_glob.has_RA = flag;
+	if (inited)
+		mutex_exit(&acf_lock);
+}
+
+void
+xtcas_set_has_WOW(bool_t flag)
+{
+	if (inited)
+		mutex_enter(&acf_lock);
+	my_acf_glob.has_WOW = flag;
 	if (inited)
 		mutex_exit(&acf_lock);
 }

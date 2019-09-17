@@ -64,7 +64,8 @@ static xtcas_generic_intf_t generic_ops = {
     .test = generic_test,
     .test_is_in_prog = generic_test_is_in_prog,
     .set_output_ops = generic_set_output_ops,
-    .set_has_RA = xtcas_set_has_RA
+    .set_has_RA = xtcas_set_has_RA,
+    .set_has_WOW = xtcas_set_has_WOW
 };
 
 /*

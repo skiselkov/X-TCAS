@@ -37,6 +37,7 @@ typedef struct {
 	bool_t		(*test_is_in_prog)(void);
 	void		(*set_output_ops)(sim_intf_output_ops_t *cbs);
 	void		(*set_has_RA)(bool_t flag);
+	void		(*set_has_WOW)(bool_t flag);
 } xtcas_generic_intf_t;
 
 /* X-TCAS internal */

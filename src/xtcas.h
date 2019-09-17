@@ -222,9 +222,11 @@ typedef struct {
 	 * `gear_ext' should be filled with the gear extension status (B_TRUE,
 	 * for gear extended, B_FALSE otherwise). This is only used for the
 	 * GTS 820 mode.
+	 * `on_ground' should be filled with the gear-on-ground status.
 	 */
 	void	(*get_my_acf_pos)(void *handle, geo_pos3_t *pos,
-		    double *alt_agl, double *hdg, bool_t *gear_ext);
+		    double *alt_agl, double *hdg, bool_t *gear_ext,
+		    bool_t *on_ground);
 	/*
 	 * This function serves to feed TCAS aircraft contacts into X-TCAS.
 	 * The callee must malloc() an array of acf_pos_t structures and
@@ -355,6 +357,7 @@ void xtcas_set_filter(tcas_filter_t filter);
 tcas_filter_t xtcas_get_filter(void);
 int xtcas_get_SL(void);
 void xtcas_set_has_RA(bool_t flag);
+void xtcas_set_has_WOW(bool_t flag);
 
 void xtcas_test(bool_t force_fail);
 bool_t xtcas_test_is_in_prog(void);
