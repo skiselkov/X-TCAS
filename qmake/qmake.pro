@@ -96,7 +96,7 @@ macx {
 	TARGET = mac.xpl
 	LIBS += -F../SDK/Libraries/Mac
 	LIBS += -framework XPLM -framework OpenGL -framework AudioToolbox
-	LIBS += -framework CoreAudio -framework AudioUnit
+	LIBS += -framework CoreAudio -framework AudioUnit -framework Foundation
 	QMAKE_CFLAGS += $$system("$$[LIBACFUTILS]/pkg-config-deps mac-64 \
 	    --static-openal --cflags")
 
