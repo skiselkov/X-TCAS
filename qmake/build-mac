@@ -40,5 +40,5 @@ qmake -spec macx-clang && \
     make -j $NCPUS && \
     mv libmac.xpl.dylib output/mac_x64/X-TCAS.xpl
 if [ $? != 0 ] ; then
-  exit
+	exit 1
 fi

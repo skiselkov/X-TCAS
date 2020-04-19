@@ -44,7 +44,7 @@ qmake -set CROSS_COMPILE x86_64-w64-mingw32- && \
     "$LIBACFUTILS/tools/mksyms" output/win_x64/X-TCAS.xpl > \
     output/win_x64/syms.txt
 if [ $? != 0 ] ; then
-  exit
+	exit 1
 fi
 
 make distclean > /dev/null
@@ -53,7 +53,7 @@ qmake -spec linux-g++-64 && \
     make -j $NCPUS && \
     mv liblin.xpl.so output/lin_x64/X-TCAS.xpl
 if [ $? != 0 ] ; then
-  exit
+	exit 1
 fi
 
 make distclean > /dev/null

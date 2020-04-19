@@ -52,9 +52,9 @@ done
 		qmake -set VSI_STYLE "$VSI_STYLE"
 	fi
 	if [[ $(uname) = "Darwin" ]]; then
-		./build-mac
+		./build-mac || exit 1
 	else
-		./build-win-lin
+		./build-win-lin || exit 1
 	fi
 ) || exit 1
 
