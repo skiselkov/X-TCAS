@@ -201,8 +201,8 @@ xplane_test_init(void)
 
 	XPLMGetScreenSize(&w, &h);
 	win = XPLMCreateWindow(0, h - DEBUG_INTF_SZ, w - DEBUG_INTF_SZ, 0, 1,
-	    draw, (XPLMHandleKey_f)dummy_func,
-	    (XPLMHandleMouseClick_f)dummy_func, NULL);
+	    draw, (XPLMHandleKey_f)(void *)dummy_func,
+	    (XPLMHandleMouseClick_f)(void *)dummy_func, NULL);
 
 	mutex_init(&contacts_lock);
 	avl_create(&contacts, contact_compar, sizeof (contact_t),
