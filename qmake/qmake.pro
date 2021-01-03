@@ -101,13 +101,7 @@ macx {
 	    --static-openal --cflags")
 
 	# To make sure we run on everything that X-Plane 10 ran on
-	QMAKE_MACOSX_DEPLOYMENT_TARGET=10.6
-
-	# The default mac qmake rules insist on linking us as C++
-	# which limits us to OSX 10.7.
-	QMAKE_LINK = $$QMAKE_CC
-	QMAKE_LINK_SHLIB = $$QMAKE_CC
-	QMAKE_LFLAGS -= -stdlib=libc++
+	QMAKE_MACOSX_DEPLOYMENT_TARGET=10.13
 }
 
 macx-clang {
