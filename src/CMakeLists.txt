@@ -173,7 +173,6 @@ else()
 	    ${LIBPNG_LIBRARY}
 	    "${LIBACFUTILS}/glew/glew-1.13.0-linux-64/install/lib64/libGLEWmx.a"
 	    ${ZLIB_LIBRARY}
-	    ${PTHREAD_NONSHARED}
 	    ${LIBC_NONSHARED}
 	    )
 	if("${TEST_STANDALONE_BUILD}" EQUAL "1")

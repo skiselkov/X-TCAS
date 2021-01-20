@@ -918,8 +918,10 @@ out:
 }
 
 static void
-vsi_worker(vsi_t *vsi)
+vsi_worker(void *userinfo)
 {
+	vsi_t *vsi = userinfo;
+
 	mutex_enter(&vsi->lock);
 
 	while (!vsi->shutdown) {
