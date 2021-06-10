@@ -31,6 +31,7 @@ extern "C" {
 typedef struct {
 	void		(*set_mode)(tcas_mode_t mode);
 	tcas_mode_t	(*get_mode)(void);
+	tcas_mode_t	(*get_mode_act)(void);
 	void		(*set_filter)(tcas_filter_t filter);
 	tcas_filter_t	(*get_filter)(void);
 	void		(*test)(bool_t force_fail);

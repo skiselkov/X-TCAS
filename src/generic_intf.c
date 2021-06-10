@@ -35,6 +35,7 @@ static void generic_update_RA_prediction(void *handle, tcas_msg_t msg,
     bool_t reversal, double min_sep_cpa);
 
 static tcas_mode_t generic_get_mode(void);
+static tcas_mode_t generic_get_mode_act(void);
 static tcas_filter_t generic_get_filter(void);
 static void generic_test(bool_t force_fail);
 static bool_t generic_test_is_in_prog(void);
@@ -59,6 +60,7 @@ static mutex_t out_ops_lock;
 static xtcas_generic_intf_t generic_ops = {
     .set_mode = generic_set_mode,
     .get_mode = generic_get_mode,
+    .get_mode_act = generic_get_mode_act,
     .set_filter = generic_set_filter,
     .get_filter = generic_get_filter,
     .test = generic_test,
@@ -171,6 +173,14 @@ generic_get_mode(void)
 	if (!inited)
 		return (0);
 	return (xtcas_get_mode());
+}
+
+static tcas_mode_t
+generic_get_mode_act(void)
+{
+	if (!inited)
+		return (0);
+	return (xtcas_get_mode_act());
 }
 
 static tcas_filter_t

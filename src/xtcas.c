@@ -2616,6 +2616,14 @@ xtcas_get_mode(void)
 	return (tcas_state.mode);
 }
 
+tcas_mode_t
+xtcas_get_mode_act(void)
+{
+	if (tcas_state.mode == TCAS_MODE_TARA && xtcas_get_SL() <= 2)
+		return (TCAS_MODE_TAONLY);
+	return (tcas_state.mode);
+}
+
 void
 xtcas_set_filter(tcas_filter_t filter)
 {
