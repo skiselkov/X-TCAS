@@ -117,7 +117,6 @@ static double my_acf_agl = 0;
 static double my_acf_hdg = 0;
 static bool_t my_acf_gear_ext = B_FALSE;
 static bool_t my_acf_on_ground = B_FALSE;
-static double last_pos_collected = 0;
 static double cur_sim_time = 0;
 static double first_sim_time = 0;
 
@@ -243,22 +242,16 @@ sim_intf_fini(void)
 	intf_inited = B_FALSE;
 }
 
-static int
-acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
+static float
+acf_pos_collector(float elapsed1, float elapsed2, int counter, void *refcon)
 {
-	UNUSED(phase);
-	UNUSED(before);
-	UNUSED(ref);
-
-	double now;
 	double gear_deploy[2];
 	int on_ground[3];
 
-	/* grab updates only at a set interval */
-	now = xp_get_time(NULL);
-	if (last_pos_collected + POS_UPDATE_INTVAL > now)
-		return (1);
-	last_pos_collected = now;
+	UNUSED(elapsed1);
+	UNUSED(elapsed2);
+	UNUSED(counter);
+	UNUSED(refcon);
 
 	/* grab our aircraft position */
 	my_acf_pos.lat = dr_getf(&drs.lat);
@@ -315,7 +308,7 @@ acf_pos_collector(XPLMDrawingPhase phase, int before, void *ref)
 	dbg_log(xplane, 1, "Collector run complete, %lu contacts",
 	    avl_numnodes(&acf_pos_tree));
 
-	return (1);
+	return (POS_UPDATE_INTVAL);
 }
 
 /*
@@ -731,8 +724,8 @@ XPluginEnable(void)
 	config_load();
 
 	XPLMRegisterFlightLoopCallback(floop_cb, FLOOP_INTVAL, NULL);
-	XPLMRegisterDrawCallback(acf_pos_collector,
-	    xplm_Phase_Airplanes, 0, NULL);
+	XPLMRegisterFlightLoopCallback(acf_pos_collector, POS_UPDATE_INTVAL,
+	    NULL);
 	first_sim_time = NAN;
 
 	dr_create_i(&drs.busnr, &busnr, B_TRUE, "xtcas/busnr");
@@ -831,8 +824,7 @@ XPluginDisable(void)
 		xtcas_inited = B_FALSE;
 	}
 
-	XPLMUnregisterDrawCallback(acf_pos_collector, xplm_Phase_Airplanes,
-	    0, NULL);
+	XPLMUnregisterFlightLoopCallback(acf_pos_collector, NULL);
 	XPLMUnregisterFlightLoopCallback(floop_cb, NULL);
 
 	if (conf != NULL) {
