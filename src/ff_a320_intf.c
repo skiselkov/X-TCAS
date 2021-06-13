@@ -376,7 +376,9 @@ ff_a320_update(double step, void *tag)
 	static int last_slot = 0;
 	int i;
 	int vs_band_mask = 0;
+#ifndef	XTCAS_NO_AUDIO
 	bool_t suppress;
+#endif
 	tcas_mode_t mode;
 	tcas_filter_t filter = TCAS_FILTER_ALL;
 
@@ -419,6 +421,7 @@ ff_a320_update(double step, void *tag)
 		dbg_log(ff_a320, 1, "set_filter:%d", filter);
 	}
 
+#ifndef	XTCAS_NO_AUDIO
 	if (gets32(ids.cancel) != 0 && xtcas_msg_is_playing()) {
 		dbg_log(ff_a320, 1, "Cancelling playing message");
 		xtcas_stop_msg(B_TRUE);
@@ -428,6 +431,7 @@ ff_a320_update(double step, void *tag)
 		dbg_log(ff_a320, 1, "set suppressed %d", suppress);
 		xtcas_set_suppressed(suppress);
 	}
+#endif	/* !defined(XTCAS_NO_AUDIO) */
 
 	if (mode == TCAS_MODE_TARA && xtcas_get_SL() <= 2)
 		mode = TCAS_MODE_TAONLY;
@@ -444,9 +448,9 @@ ff_a320_update(double step, void *tag)
 	if (tcas.lower_red)
 		vs_band_mask |= (1 << 2);
 	sets32(ids.vs_area_mask, vs_band_mask);
-
+#ifndef	XTCAS_NO_AUDIO
 	sets32(ids.alert, xtcas_msg_is_playing());
-
+#endif
 	/*
 	 * Per-aircraft updates.
 	 * We perform one update per call and keep track of the slot we last

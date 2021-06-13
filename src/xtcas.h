@@ -341,6 +341,12 @@ typedef struct {
 	void	(*update_RA_prediction)(void *handle, tcas_msg_t msg,
 		    tcas_RA_type_t type, tcas_RA_sense_t sense,
 		    bool_t crossing, bool_t reversal, double min_sep_cpa);
+	/*
+	 * Optional callback that specifically informs the avionics that
+	 * X-TCAS wishes to generate an audio message. This is useful for
+	 * X-TCAS builds with XTCAS_NO_AUDIO defined.
+	 */
+	void	(*play_audio_msg)(void *handle, tcas_msg_t msg);
 } sim_intf_output_ops_t;
 
 void xtcas_run(void);

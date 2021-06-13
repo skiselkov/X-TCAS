@@ -41,9 +41,14 @@ DEFINES += _GNU_SOURCE DEBUG _FILE_OFFSET_BITS=64 _USE_MATH_DEFINES
 DEFINES += XPLM200 XPLM210
 
 VSI_DRAW_MODE = $$[VSI_DRAW_MODE]
+NO_AUDIO = $$[XTCAS_NO_AUDIO]
 
 DEFINES += VSI_DRAW_MODE=$$[VSI_DRAW_MODE] VSI_STYLE=$$[VSI_STYLE]
 DEFINES += GTS820_MODE=$$[GTS820_MODE]
+
+contains(NO_AUDIO, 1) {
+	DEFINES += XTCAS_NO_AUDIO
+}
 
 # Just a generally good idea not to depend on shipped libgcc.
 !macx {
@@ -127,10 +132,14 @@ SOURCES += \
 	../src/generic_intf.c \
 	../src/pos.c \
 	../src/SL.c \
-	../src/snd_sys.c \
 	../src/xplane.c \
 	../src/xplane_test.c \
 	../src/xtcas.c
+
+!contains(NO_AUDIO, 1) {
+	HEADERS += ../src/snd_sys.h
+	SOURCES += ../src/snd_sys.c
+}
 
 !contains(VSI_DRAW_MODE, 0) {
 	HEADERS += ../src/vsi.h

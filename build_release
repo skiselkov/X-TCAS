@@ -20,8 +20,9 @@ OUTPUT="X-TCAS"
 VSI_STYLE=0
 GTS820_MODE=0
 SNDSET="male1"
+NO_AUDIO=0
 
-while getopts "v:s:G" opt; do
+while getopts "v:s:GN" opt; do
 	case "$opt" in
 	v)
 		VSI_STYLE="$OPTARG"
@@ -33,6 +34,9 @@ while getopts "v:s:G" opt; do
 		VSI_STYLE=0
 		GTS820_MODE=1
 		SNDSET="gts820"
+		;;
+	N)
+		NO_AUDIO=1
 		;;
 	*)
 		echo "Invalid option -$OPTARG" >&2
@@ -51,6 +55,7 @@ done
 		qmake -set VSI_DRAW_MODE 1
 		qmake -set VSI_STYLE "$VSI_STYLE"
 	fi
+	qmake -set XTCAS_NO_AUDIO ${NO_AUDIO}
 	if [[ $(uname) = "Darwin" ]]; then
 		./build-mac || exit 1
 	else

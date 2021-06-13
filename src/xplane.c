@@ -46,7 +46,9 @@
 #include "../xtcas/generic_intf.h"
 #include "dbg_log.h"
 #include "ff_a320_intf.h"
+#ifndef	XTCAS_NO_AUDIO
 #include "snd_sys.h"
+#endif
 #include "xtcas.h"
 #include "xplane.h"
 
@@ -367,8 +369,10 @@ static float
 floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
     int counter, void *refcon)
 {
+#ifndef	XTCAS_NO_AUDIO
 	double volume = (dr_geti(&drs.view_is_ext) != 1 &&
 	    dr_geti(&drs.sound_on) != 0) ? dr_getf(&drs.warn_volume) : 0;
+#endif	/* !defined(XTCAS_NO_AUDIO) */
 
 	UNUSED(elapsed_since_last_call);
 	UNUSED(elapsed_since_last_floop);
@@ -445,13 +449,17 @@ floop_cb(float elapsed_since_last_call, float elapsed_since_last_floop,
 		xtcas_set_filter(filter_req);
 		filter_act = filter_req;
 		xtcas_run();
+#ifndef	XTCAS_NO_AUDIO
 		xtcas_snd_sys_run(volume);
+#endif
 		if (ff_a320_intf_inited)
 			ff_a320_intf_update();
 	} else {
 		xtcas_set_mode(TCAS_MODE_STBY);
 		mode_act = TCAS_MODE_STBY;
+#ifndef	XTCAS_NO_AUDIO
 		xtcas_snd_sys_run(volume);
+#endif
 	}
 
 	return (-1.0);
@@ -671,10 +679,12 @@ XPluginStart(char *name, char *sig, char *desc)
 	    "GTS820:%d)", XTCAS_VER, VSI_DRAW_MODE, VSI_STYLE, GTS820_MODE);
 	sim_intf_init();
 	snd_dir = mkpathname(plugindir, "data", "msgs", NULL);
+#ifndef	XTCAS_NO_AUDIO
 	if (!xtcas_snd_sys_init(snd_dir)) {
 		free(snd_dir);
 		return (0);
 	}
+#endif	/* !defined(XTCAS_NO_AUDIO) */
 	free(snd_dir);
 
 #if	!VSI_DRAW_MODE
@@ -709,7 +719,9 @@ XPluginStart(char *name, char *sig, char *desc)
 PLUGIN_API void
 XPluginStop(void)
 {
+#ifndef	XTCAS_NO_AUDIO
 	xtcas_snd_sys_fini();
+#endif
 	sim_intf_fini();
 #ifdef	EXCEPT_DEBUG
 	except_fini();

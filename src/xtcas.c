@@ -34,7 +34,9 @@
 
 #include "dbg_log.h"
 #include "pos.h"
+#ifndef	XTCAS_NO_AUDIO
 #include "snd_sys.h"
+#endif
 #include "SL.h"
 #include "xtcas.h"
 
@@ -2191,7 +2193,15 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				    my_acf->on_ground);
 #endif	/* !GTS820_MODE */
 				if ((int)msg != -1 && !inhibit_audio) {
+#ifndef	XTCAS_NO_AUDIO
 					xtcas_play_msg(msg);
+#endif
+					if (out_ops != NULL &&
+					    out_ops->play_audio_msg != NULL) {
+						out_ops->play_audio_msg(
+						    out_ops->handle,
+						    msg);
+					}
 				}
 				if (ra->info->type == RA_TYPE_CORRECTIVE) {
 					min_green = ra->info->vs.out.min;
@@ -2240,11 +2250,18 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		    now - tcas_state.change_t >= STATE_CHG_DELAY
 #endif	/* !GTS820_MODE */
 		    ) {
-			if (my_acf->agl > INHIBIT_AUDIO) {
+			if (my_acf->agl > INHIBIT_AUDIO || isnan(my_acf->agl)) {
 #if	GTS820_MODE
 				gts820_TA_play_msg(my_acf, &new_TA_threats);
 #else	/* !GTS820_MODE */
+#ifndef	XTCAS_NO_AUDIO
 				xtcas_play_msg(RA_MSG_TFC);
+#endif
+				if (out_ops != NULL &&
+				    out_ops->play_audio_msg != NULL) {
+					out_ops->play_audio_msg(out_ops->handle,
+					    RA_MSG_TFC);
+				}
 #endif	/* !GTS820_MODE */
 			}
 			free(tcas_state.ra);
@@ -2262,8 +2279,16 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 		dbg_log(tcas, 1, "resolve_CPAs: NONE  adv_state:%d  "
 		    "elapsed:%.0f", tcas_state.adv_state,
 		    (now - tcas_state.change_t) / 1000000.0);
-		if (tcas_state.adv_state == ADV_STATE_RA)
+		if (tcas_state.adv_state == ADV_STATE_RA) {
+#ifndef	XTCAS_NO_AUDIO
 			xtcas_play_msg(RA_MSG_CLEAR);
+#endif	/* !defined(XTCAS_NO_AUDIO) */
+			if (out_ops != NULL &&
+			    out_ops->play_audio_msg != NULL) {
+				out_ops->play_audio_msg(out_ops->handle,
+				    RA_MSG_CLEAR);
+			}
+		}
 		free(tcas_state.ra);
 		if (out_ops != NULL) {
 			out_ops->update_RA(out_ops->handle, ADV_STATE_NONE,
@@ -2410,10 +2435,9 @@ main_loop(void *ignored)
 					out_ops->update_RA(out_ops->handle,
 					    ADV_STATE_RA, RA_MSG_CLB,
 					    RA_TYPE_CORRECTIVE, RA_SENSE_UPWARD,
-					    B_FALSE, B_FALSE, 0, FPM2MPS(-200),
-					    FPM2MPS(1500),
-					    -INF_VS, FPM2MPS(-200),
-					    FPM2MPS(1500), INF_VS);
+					    B_FALSE, B_FALSE, 0,
+					    0, FPM2MPS(300),
+					    -INF_VS, 0, FPM2MPS(1500), INF_VS);
 #endif	/* !VSI_DRAW_MODE */
 				}
 			} else if (now_t - tcas_state.test_start_time >
@@ -2432,7 +2456,14 @@ main_loop(void *ignored)
 				}
 				tcas_state.test_start_time = NAN;
 				tcas_state.test_in_prog = B_FALSE;
+#ifndef	XTCAS_NO_AUDIO
 				xtcas_play_msg(TCAS_TEST_PASS);
+#endif
+				if (out_ops != NULL &&
+				    out_ops->play_audio_msg != NULL) {
+					out_ops->play_audio_msg(out_ops->handle,
+					    TCAS_TEST_PASS);
+				}
 			}
 		}
 		test = tcas_state.test_in_prog;
@@ -2666,12 +2697,24 @@ void
 xtcas_test(bool_t force_fail)
 {
 	if (force_fail) {
+#ifndef	XTCAS_NO_AUDIO
 		xtcas_play_msg(TCAS_TEST_FAIL);
+#endif
+		if (out_ops != NULL && out_ops->play_audio_msg != NULL) {
+			out_ops->play_audio_msg(out_ops->handle,
+			    TCAS_TEST_FAIL);
+		}
 		return;
 	}
 	if (tcas_state.mode != TCAS_MODE_STBY) {
 		logMsg("Cannot perform TCAS test: TCAS mode not STBY");
+#ifndef	XTCAS_NO_AUDIO
 		xtcas_play_msg(TCAS_TEST_FAIL);
+#endif
+		if (out_ops != NULL && out_ops->play_audio_msg != NULL) {
+			out_ops->play_audio_msg(out_ops->handle,
+			    TCAS_TEST_FAIL);
+		}
 		return;
 	}
 

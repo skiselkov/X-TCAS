@@ -33,6 +33,7 @@ static void generic_update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
 static void generic_update_RA_prediction(void *handle, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
     bool_t reversal, double min_sep_cpa);
+static void generic_play_audio_msg(void *handle, tcas_msg_t msg);
 
 static tcas_mode_t generic_get_mode(void);
 static tcas_mode_t generic_get_mode_act(void);
@@ -46,7 +47,8 @@ static sim_intf_output_ops_t my_ops = {
     .update_contact = generic_update_contact,
     .delete_contact = generic_delete_contact,
     .update_RA = generic_update_RA,
-    .update_RA_prediction = generic_update_RA_prediction
+    .update_RA_prediction = generic_update_RA_prediction,
+    .play_audio_msg = generic_play_audio_msg
 };
 /*
  * We need to track init state, because we might be called by external
@@ -146,6 +148,19 @@ generic_update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
 		    reversal, min_sep_cpa, min_green, max_green,
 		    min_red_lo, max_red_lo, min_red_hi, max_red_hi);
 	}
+}
+
+static void
+generic_play_audio_msg(void *handle, tcas_msg_t msg)
+{
+	void *out_handle;
+	void (*play_audio_msg)(void *handle, tcas_msg_t msg);
+
+	UNUSED(handle);
+	INTF_OP_GET(play_audio_msg);
+
+	if (play_audio_msg != NULL)
+		play_audio_msg(out_handle, msg);
 }
 
 static void
