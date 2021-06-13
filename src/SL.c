@@ -69,7 +69,8 @@
 
 #if	GTS820_MODE
 
-#define	NUM_SL 3
+#define	NUM_SL		3
+#define	FALLBACK_SL	1
 
 static const SL_t SL_table[NUM_SL] = {
     {	/* Stand-by mode */
@@ -125,7 +126,8 @@ static const SL_t SL_table[NUM_SL] = {
 /*
  * TCAS II v7.1 mode.
  */
-#define	NUM_SL 8
+#define	NUM_SL		8
+#define	FALLBACK_SL	3
 static const SL_t SL_table[NUM_SL] = {
     {	/* SL1 */
 	.SL_id =	1,
@@ -175,7 +177,7 @@ static const SL_t SL_table[NUM_SL] = {
     {	/* SL4 */
 	.SL_id =	4,
 	.agl =		B_FALSE,
-	.alt_min =	0,
+	.alt_min =	-INFINITY,	/* fallback in case RA is invalid */
 	.alt_max =	FEET2MET(5000),
 	.hyst_down =	0,
 	.hyst_up =	FEET2MET(500),
@@ -266,7 +268,11 @@ xtcas_SL_select(unsigned prev_SL_id, double alt_msl, double alt_agl,
 		VERIFY3U(force_select_SL, <=, 8);
 		return (&SL_table[force_select_SL - 1]);
 	}
-
+	/*
+	 * In case we have no altitude data, fall back to the default SL.
+	 */
+	if (!is_valid_alt(alt_msl))
+		return (&SL_table[FALLBACK_SL]);
 	for (int i = 0; i < NUM_SL; i++) {
 		const SL_t *sl = &SL_table[i];
 		double min, max;
@@ -284,5 +290,5 @@ xtcas_SL_select(unsigned prev_SL_id, double alt_msl, double alt_agl,
 		    (sl->gear_test == GEAR_TEST_UP && !gear_ext))
 			return (sl);
 	}
-	abort();
+	VERIFY_FAIL();
 }
