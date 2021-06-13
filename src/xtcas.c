@@ -769,8 +769,17 @@ update_bogie_positions(double t, geo_pos3_t my_pos, double my_alt_agl)
 		    &my_acf_glob.d_vvel));
 		acf->trk_v = (acf->trend_data_ready) ?
 		    vect2_set_abs(hdg2dir(acf->trk), acf->gs) : NULL_VECT2;
-		acf->on_ground = (acf->alt_rptg &&
-		    acf->cur_pos.elev < gnd_level + ON_GROUND_AGL_THRESH);
+		if (pos->on_ground) {
+			acf->on_ground = B_TRUE;
+		} else {
+			/*
+			 * If not already declared as being on-ground via
+			 * Mode S, try to determine that using our RA height.
+			 */
+			acf->on_ground = (acf->alt_rptg &&
+			    acf->cur_pos.elev < gnd_level +
+			    ON_GROUND_AGL_THRESH);
+		}
 		/* mark acf as up-to-date */
 		acf->up_to_date = B_TRUE;
 

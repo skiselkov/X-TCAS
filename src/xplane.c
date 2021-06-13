@@ -64,8 +64,10 @@
 #define	XTCAS_PLUGIN_DESCRIPTION \
 	"Generic TCAS II v7.1 implementation for X-Plane"
 
-#define	MAX_MP_PLANES	19
-#define	MAX_DR_NAME_LEN	256
+#define	MAX_MP_PLANES		19
+#define	MAX_TCAS_TARGETS	64
+#define	MAX_DR_NAME_LEN		256
+#define	CTC_INACT_DELAY		10	/* seconds */
 
 #define	BUSNR_DFL	0
 #define	BUSNR_MAX	6
@@ -92,6 +94,13 @@ static struct {
 	dr_t	adc_fail;
 	dr_t	gear_deploy;
 	dr_t	on_ground;
+
+	bool_t	have_tcas_targets;	/* X-Plane 11.53 TCAS DRs valid */
+	dr_t	tcas_target_lat;	/* deg[64] */
+	dr_t	tcas_target_lon;	/* deg[64] */
+	dr_t	tcas_target_elev;	/* m[64] */
+	dr_t	tcas_target_on_gnd;	/* bool[64] */
+	dr_t	tcas_target_number;	/* int */
 
 	/* our datarefs */
 	dr_t	busnr;
@@ -219,6 +228,21 @@ sim_intf_init(void)
 		fdr_find(&mp_planes[i].z,
 		    "sim/multiplayer/position/plane%d_z", i + 1);
 	}
+	/*
+	 * Since X-Plane 11.53, we can grab up to 64 contacts, including
+	 * their WoW status.
+	 */
+	drs.have_tcas_targets =
+	    (dr_find(&drs.tcas_target_lat,
+	    "sim/cockpit2/tcas/targets/position/lat") &&
+	    dr_find(&drs.tcas_target_lon,
+	    "sim/cockpit2/tcas/targets/position/lon") &&
+	    dr_find(&drs.tcas_target_elev,
+	    "sim/cockpit2/tcas/targets/position/ele") &&
+	    dr_find(&drs.tcas_target_on_gnd,
+	    "sim/cockpit2/tcas/targets/position/weight_on_wheels") &&
+	    dr_find(&drs.tcas_target_number,
+	    "sim/cockpit2/tcas/indicators/tcas_num_acf"));
 
 	avl_create(&acf_pos_tree, acf_pos_compar, sizeof (acf_pos_t),
 	    offsetof(acf_pos_t, tree_node));
@@ -249,6 +273,8 @@ acf_pos_collector(float elapsed1, float elapsed2, int counter, void *refcon)
 {
 	double gear_deploy[2];
 	int on_ground[3];
+	int num_planes;
+	bool_t use_tcas_targets;
 
 	UNUSED(elapsed1);
 	UNUSED(elapsed2);
@@ -269,26 +295,61 @@ acf_pos_collector(float elapsed1, float elapsed2, int counter, void *refcon)
 	    on_ground[2] != 0);
 
 	/* grab all other aircraft positions */
-	for (int i = 0; i < MAX_MP_PLANES; i++) {
-		vect3_t local;
-		geo_pos3_t world;
+	use_tcas_targets = (drs.have_tcas_targets &&
+	    dr_geti(&drs.tcas_target_number) > 1);
+	if (use_tcas_targets) {
+		num_planes = MAX_TCAS_TARGETS - 1;
+	} else {
+		num_planes = MAX_MP_PLANES;
+	}
+	if (!use_tcas_targets) {
+		/* Expunge any targets with an ID > MAX_MP_PLANES */
+		for (int i = MAX_MP_PLANES; i < MAX_TCAS_TARGETS; i++) {
+			acf_pos_t srch = {
+			    .acf_id = (void *)(uintptr_t)(i + 1)
+			};
+			acf_pos_t *pos = avl_find(&acf_pos_tree, &srch, NULL);
+			if (pos != NULL) {
+				avl_remove(&acf_pos_tree, pos);
+				free(pos);
+			}
+		}
+	}
+	for (int i = 0; i < num_planes; i++) {
+		geo_pos3_t world = NULL_GEO_POS3;
 		avl_index_t where;
 		acf_pos_t srch;
 		acf_pos_t *pos;
+		bool_t on_ground = B_FALSE;
 
-		local.x = dr_getf(&mp_planes[i].x);
-		local.y = dr_getf(&mp_planes[i].y);
-		local.z = dr_getf(&mp_planes[i].z);
+		if (use_tcas_targets) {
+			dr_getvf(&drs.tcas_target_lat, &world.lat, i + 1, 1);
+			dr_getvf(&drs.tcas_target_lon, &world.lon, i + 1, 1);
+			dr_getvf(&drs.tcas_target_elev, &world.elev, i + 1, 1);
+			if (world.lat != 0 || world.lon != 0) {
+				int flag;
+				dr_getvi(&drs.tcas_target_on_gnd, &flag,
+				    i + 1, 1);
+				on_ground = (flag != 0);
+			} else {
+				world = NULL_GEO_POS3;
+			}
+		} else {
+			vect3_t local = VECT3(dr_getf(&mp_planes[i].x),
+			    dr_getf(&mp_planes[i].y),
+			    dr_getf(&mp_planes[i].z));
+			if (!IS_ZERO_VECT3(local)) {
+				XPLMLocalToWorld(local.x, local.y, local.z,
+				    &world.lat, &world.lon, &world.elev);
+			}
+		}
 
 		mutex_enter(&acf_pos_lock);
 
 		srch.acf_id = (void *)(uintptr_t)(i + 1);
 		pos = avl_find(&acf_pos_tree, &srch, &where);
-		/*
-		 * This is exceedingly unlikely, so it's "good enough"
-		 * to use as an emptiness test.
-		 */
-		if (IS_ZERO_VECT3(local)) {
+
+		if (IS_NULL_GEO_POS3(world)) {
 			if (pos != NULL) {
 				avl_remove(&acf_pos_tree, pos);
 				free(pos);
@@ -297,11 +358,29 @@ acf_pos_collector(float elapsed1, float elapsed2, int counter, void *refcon)
 			if (pos == NULL) {
 				pos = safe_calloc(1, sizeof (*pos));
 				pos->acf_id = (void *)(uintptr_t)(i + 1);
+				ASSERT(pos->acf_id != NULL);
+				pos->pos = NULL_GEO_POS3;
+				pos->stale = true;
 				avl_insert(&acf_pos_tree, pos, where);
 			}
-			XPLMLocalToWorld(local.x, local.y, local.z,
-			    &world.lat, &world.lon, &world.elev);
-			pos->pos = world;
+			/*
+			 * Since when the slot becomes disused, it simply stops
+			 * being updated. To detect that, we compare the new
+			 * position to the previous position. If the contact
+			 * hasn't moved in a while, we mark it as stale and
+			 * stop forwarding it to the TCAS core. We can't simply
+			 * remove it from the list, as that would result in us
+			 * falsely re-adding it in the very new loop.
+			 */
+			if (!GEO3_EQ(pos->pos, world)) {
+				pos->pos = world;
+				pos->on_ground = on_ground;
+				pos->last_seen = cur_sim_time;
+				pos->stale = B_FALSE;
+			} else if (cur_sim_time - pos->last_seen >
+			    CTC_INACT_DELAY) {
+				pos->stale = B_TRUE;
+			}
 		}
 
 		mutex_exit(&acf_pos_lock);
@@ -352,12 +431,20 @@ xp_get_oth_acf_pos(void *handle, acf_pos_t **pos_p, size_t *num)
 	UNUSED(handle);
 
 	mutex_enter(&acf_pos_lock);
-	*num = avl_numnodes(&acf_pos_tree);
-	*pos_p = safe_calloc(*num, sizeof (*pos));
+	*num = 0;
 	for (pos = avl_first(&acf_pos_tree), i = 0; pos != NULL;
 	    pos = AVL_NEXT(&acf_pos_tree, pos), i++) {
-		ASSERT3U(i, <, *num);
-		memcpy(&(*pos_p)[i], pos, sizeof (*pos));
+		if (!pos->stale)
+			(*num)++;
+	}
+	*pos_p = safe_calloc(*num, sizeof (*pos));
+	for (pos = avl_first(&acf_pos_tree), i = 0; pos != NULL;
+	    pos = AVL_NEXT(&acf_pos_tree, pos)) {
+		if (!pos->stale) {
+			ASSERT3U(i, <, *num);
+			memcpy(&(*pos_p)[i], pos, sizeof (*pos));
+			i++;
+		}
 	}
 	mutex_exit(&acf_pos_lock);
 }

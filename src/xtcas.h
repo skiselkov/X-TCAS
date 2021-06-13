@@ -88,10 +88,14 @@ typedef enum {
  *	fields should contain the aircraft's latitude & longitude in degrees
  *	(east/north increasing) and the elev field should contain the
  *	aircraft's current barometric altitude in meters.
+ * 3) on_gnd: Boolean field filled from the Mode S data (if available).
  */
 typedef struct {
 	void		*acf_id;
 	geo_pos3_t	pos;
+	bool_t		on_ground;
+	double		last_seen;
+	bool_t		stale;
 	avl_node_t	tree_node;
 } acf_pos_t;
 
