@@ -2702,9 +2702,27 @@ xtcas_set_has_WOW(bool_t flag)
 		mutex_exit(&acf_lock);
 }
 
+static bool_t
+xtcas_test_check(const char **reason)
+{
+	ASSERT(reason != NULL);
+
+	if (tcas_state.mode != TCAS_MODE_STBY) {
+		*reason = "TCAS mode not STBY";
+		return (B_FALSE);
+	}
+	if (!my_acf_glob.has_RA) {
+		*reason = "RA INOP";
+		return (B_FALSE);
+	}
+	return (B_TRUE);
+}
+
 void
 xtcas_test(bool_t force_fail)
 {
+	const char *reason = NULL;
+
 	if (force_fail) {
 #ifndef	XTCAS_NO_AUDIO
 		xtcas_play_msg(TCAS_TEST_FAIL);
@@ -2715,8 +2733,8 @@ xtcas_test(bool_t force_fail)
 		}
 		return;
 	}
-	if (tcas_state.mode != TCAS_MODE_STBY) {
-		logMsg("Cannot perform TCAS test: TCAS mode not STBY");
+	if (!xtcas_test_check(&reason)) {
+		logMsg("TCAS test fail: %s", reason);
 #ifndef	XTCAS_NO_AUDIO
 		xtcas_play_msg(TCAS_TEST_FAIL);
 #endif
@@ -2726,7 +2744,6 @@ xtcas_test(bool_t force_fail)
 		}
 		return;
 	}
-
 	mutex_enter(&tcas_state.test_lock);
 	tcas_state.test_in_prog = B_TRUE;
 	mutex_exit(&tcas_state.test_lock);
