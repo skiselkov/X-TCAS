@@ -72,58 +72,34 @@ static xtcas_generic_intf_t generic_ops = {
     .set_has_WOW = xtcas_set_has_WOW
 };
 
-/*
- * Grabs the op in the output interface in a thread-safe manner to protect
- * against somebody replacing the ops using set_output_ops.
- */
-#define	INTF_OP_GET(op_name) \
-	do { \
-		if (inited) { \
-			mutex_enter(&out_ops_lock); \
-			if (out_ops != NULL && out_ops->op_name != NULL) { \
-				op_name = out_ops->op_name; \
-				out_handle = out_ops->handle; \
-			} else { \
-				op_name = NULL; \
-				out_handle = NULL; \
-			} \
-			mutex_exit(&out_ops_lock); \
-		} else { \
-			op_name = NULL; \
-			out_handle = NULL; \
-		} \
-	} while (0)
-
 static void
 generic_update_contact(void *handle, void *acf_id, double rbrg,
     double rdist, double ralt, double vs, double trk, double gs,
     tcas_threat_t level)
 {
-	void *out_handle;
-	void (*update_contact)(void *handle, void *acf_id, double rbrg,
-	    double rdist, double ralt, double vs, double trk, double gs,
-	    tcas_threat_t level);
-
 	UNUSED(handle);
-	INTF_OP_GET(update_contact);
 
-	if (update_contact != NULL) {
-		update_contact(out_handle, acf_id, rbrg, rdist, ralt, vs,
-		    trk, gs, level);
+	if (!inited)
+		return;
+	mutex_enter(&out_ops_lock);
+	if (out_ops != NULL && out_ops->update_contact != NULL) {
+		out_ops->update_contact(out_ops->handle, acf_id,
+		    rbrg, rdist, ralt, vs, trk, gs, level);
 	}
+	mutex_exit(&out_ops_lock);
 }
 
 static void
 generic_delete_contact(void *handle, void *acf_id)
 {
-	void *out_handle;
-	void (*delete_contact)(void *handle, void *acf_id);
-
 	UNUSED(handle);
-	INTF_OP_GET(delete_contact);
 
-	if (delete_contact != NULL)
-		delete_contact(out_handle, acf_id);
+	if (!inited)
+		return;
+	mutex_enter(&out_ops_lock);
+	if (out_ops != NULL && out_ops->delete_contact != NULL)
+		out_ops->delete_contact(out_ops->handle, acf_id);
+	mutex_exit(&out_ops_lock);
 }
 
 static void
@@ -133,34 +109,30 @@ generic_update_RA(void *handle, tcas_adv_t adv, tcas_msg_t msg,
     double max_green, double min_red_lo, double max_red_lo,
     double min_red_hi, double max_red_hi)
 {
-	void *out_handle;
-	void (*update_RA)(void *handle, tcas_adv_t adv, tcas_msg_t msg,
-	    tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
-	    bool_t reversal, double min_sep_cpa, double min_green,
-	    double max_green, double min_red_lo, double max_red_lo,
-	    double min_red_hi, double max_red_hi);
-
 	UNUSED(handle);
-	INTF_OP_GET(update_RA);
 
-	if (update_RA != NULL) {
-		update_RA(out_handle, adv, msg, type, sense, crossing,
-		    reversal, min_sep_cpa, min_green, max_green,
+	if (!inited)
+		return;
+	mutex_enter(&out_ops_lock);
+	if (out_ops != NULL && out_ops->update_RA != NULL) {
+		out_ops->update_RA(out_ops->handle, adv, msg, type, sense,
+		    crossing, reversal, min_sep_cpa, min_green, max_green,
 		    min_red_lo, max_red_lo, min_red_hi, max_red_hi);
 	}
+	mutex_exit(&out_ops_lock);
 }
 
 static void
 generic_play_audio_msg(void *handle, tcas_msg_t msg)
 {
-	void *out_handle;
-	void (*play_audio_msg)(void *handle, tcas_msg_t msg);
-
 	UNUSED(handle);
-	INTF_OP_GET(play_audio_msg);
 
-	if (play_audio_msg != NULL)
-		play_audio_msg(out_handle, msg);
+	if (!inited)
+		return;
+	mutex_enter(&out_ops_lock);
+	if (out_ops != NULL && out_ops->play_audio_msg != NULL)
+		out_ops->play_audio_msg(out_ops->handle, msg);
+	mutex_exit(&out_ops_lock);
 }
 
 static void
@@ -168,18 +140,16 @@ generic_update_RA_prediction(void *handle, tcas_msg_t msg,
     tcas_RA_type_t type, tcas_RA_sense_t sense, bool_t crossing,
     bool_t reversal, double min_sep_cpa)
 {
-	void *out_handle;
-	void (*update_RA_prediction)(void *handle, tcas_msg_t msg,
-	    tcas_RA_type_t type, tcas_RA_sense_t sense,
-	    bool_t crossing, bool_t reversal, double min_sep_cpa);
-
 	UNUSED(handle);
-	INTF_OP_GET(update_RA_prediction);
 
-	if (update_RA_prediction != NULL) {
-		update_RA_prediction(out_handle, msg, type,
+	if (!inited)
+		return;
+	mutex_enter(&out_ops_lock);
+	if (out_ops != NULL && out_ops->update_RA_prediction != NULL) {
+		out_ops->update_RA_prediction(out_ops->handle, msg, type,
 		    sense, crossing, reversal, min_sep_cpa);
 	}
+	mutex_exit(&out_ops_lock);
 }
 
 static tcas_mode_t
