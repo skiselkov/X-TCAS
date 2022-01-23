@@ -77,7 +77,6 @@ static bool_t intf_inited = B_FALSE;
 static bool_t xtcas_inited = B_FALSE;
 static bool_t standalone_mode UNUSED_ATTR;
 static bool_t standalone_mode = B_FALSE;
-static bool_t xpmp_present = B_FALSE;
 static struct {
 	dr_t	time;
 	dr_t	elev;
@@ -209,8 +208,6 @@ acf_pos_compar(const void *a, const void *b)
 static void
 sim_intf_init(void)
 {
-	dr_t dr;
-
 	fdr_find(&drs.time, "sim/time/total_running_time_sec");
 	fdr_find(&drs.elev, "sim/flightmodel/position/elevation");
 	fdr_find(&drs.rad_alt_ft,
@@ -223,13 +220,6 @@ sim_intf_init(void)
 	fdr_find(&drs.warn_volume, "sim/operation/sound/warning_volume_ratio");
 	fdr_find(&drs.sound_on, "sim/operation/sound/sound_on");
 
-	if (dr_find(&dr, "libxplanemp/controls/taxi_lites_on") ||
-	    dr_find(&dr, "libxplanemp/controls/landing_lites_on") ||
-	    dr_find(&dr, "libxplanemp/controls/gear_ratio")) {
-		logMsg("Detected an XPMP network plugin, disabling TCAS "
-		    "dataref WoW check");
-		xpmp_present = B_TRUE;
-	}
 	for (int i = 0; i < MAX_MP_PLANES; i++) {
 		fdr_find(&mp_planes[i].x,
 		    "sim/multiplayer/position/plane%d_x", i + 1);
@@ -336,15 +326,8 @@ acf_pos_collector(float elapsed1, float elapsed2, int counter, void *refcon)
 			dr_getvf(&drs.tcas_target_lat, &world.lat, i + 1, 1);
 			dr_getvf(&drs.tcas_target_lon, &world.lon, i + 1, 1);
 			dr_getvf(&drs.tcas_target_elev, &world.elev, i + 1, 1);
-			if (world.lat == 0 && world.lon == 0) {
+			if (world.lat == 0 && world.lon == 0)
 				world = NULL_GEO_POS3;
-			} else if (!xpmp_present) {
-				int flag;
-
-				dr_getvi(&drs.tcas_target_on_gnd, &flag,
-				    i + 1, 1);
-				on_ground = (flag != 0);
-			}
 		} else {
 			vect3_t local = VECT3(dr_getf(&mp_planes[i].x),
 			    dr_getf(&mp_planes[i].y),
