@@ -133,8 +133,11 @@ typedef struct tcas_acf {
 	bool_t	up_to_date;	/* used for efficient position updates */
 	bool_t	on_ground;	/* on-ground condition */
 	bool_t	gear_ext;	/* gear is extended */
+	bool_t	custom_gear_ext;/* host provides gear extended readings */
 	bool_t	has_RA;		/* has radio altimeter? */
+	bool_t	custom_RA;	/* host provides custom RA readings */
 	bool_t	has_WOW;	/* has weight-on-wheels switch? */
+	bool_t	custom_WOW;	/* host provides custom WOW readings */
 	cpa_t	*cpa;		/* CPA this aircraft participates in */
 	bool_t	slow_closure;	/* for RA threats that are closing in slow */
 	tcas_threat_t	threat;	/* type of TCAS threat */
@@ -656,9 +659,17 @@ RA_hint_compar(const void *ha, const void *hb)
 static void
 update_my_position(double t)
 {
+	double agl;
+	bool_t on_ground, gear_ext;
+
 	in_ops->get_my_acf_pos(in_ops->handle, &my_acf_glob.cur_pos,
-	    &my_acf_glob.agl, &my_acf_glob.hdg, &my_acf_glob.gear_ext,
-	    &my_acf_glob.on_ground);
+	    &agl, &my_acf_glob.hdg, &gear_ext, &on_ground);
+	if (!my_acf_glob.custom_RA)
+		my_acf_glob.agl = agl;
+	if (!my_acf_glob.custom_WOW)
+		my_acf_glob.on_ground = on_ground;
+	if (!my_acf_glob.custom_gear_ext)
+		my_acf_glob.gear_ext = gear_ext;
 	my_acf_glob.cur_pos_3d = VECT3(0, 0, my_acf_glob.cur_pos.elev);
 	xtcas_obj_pos_update(&my_acf_glob.pos_upd, t, my_acf_glob.cur_pos,
 	    my_acf_glob.agl);
@@ -2187,7 +2198,7 @@ resolve_CPAs(tcas_acf_t *my_acf, avl_tree_t *other_acf, avl_tree_t *cpas,
 				    ra->reversal ? ra->info->rev_msg :
 				    ra->info->msg);
 #if	GTS820_MODE
-				if (my_acf->has_RA) {
+				if (!isnan(my_acf->agl)) {
 					inhibit_audio = (my_acf->agl <
 					    INHIBIT_AUDIO || my_acf->on_ground);
 				} else {
@@ -2698,6 +2709,41 @@ xtcas_set_has_WOW(bool_t flag)
 	if (inited)
 		mutex_enter(&acf_lock);
 	my_acf_glob.has_WOW = flag;
+	if (inited)
+		mutex_exit(&acf_lock);
+}
+
+void
+xtcas_set_RA(double agl_hgt_m)
+{
+	if (inited)
+		mutex_enter(&acf_lock);
+	my_acf_glob.has_RA = !isnan(agl_hgt_m);
+	my_acf_glob.agl = agl_hgt_m;
+	my_acf_glob.custom_RA = B_TRUE;
+	if (inited)
+		mutex_exit(&acf_lock);
+}
+
+void
+xtcas_set_WOW(bool_t on_ground)
+{
+	if (inited)
+		mutex_enter(&acf_lock);
+	my_acf_glob.has_WOW = B_TRUE;
+	my_acf_glob.on_ground = on_ground;
+	my_acf_glob.custom_WOW = B_TRUE;
+	if (inited)
+		mutex_exit(&acf_lock);
+}
+
+void
+xtcas_set_gear_ext(bool_t gear_ext)
+{
+	if (inited)
+		mutex_enter(&acf_lock);
+	my_acf_glob.gear_ext = gear_ext;
+	my_acf_glob.custom_gear_ext = B_TRUE;
 	if (inited)
 		mutex_exit(&acf_lock);
 }

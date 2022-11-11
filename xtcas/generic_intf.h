@@ -39,6 +39,9 @@ typedef struct {
 	void		(*set_output_ops)(const sim_intf_output_ops_t *cbs);
 	void		(*set_has_RA)(bool_t flag);
 	void		(*set_has_WOW)(bool_t flag);
+	void		(*set_RA)(double agl_hgt_m);
+	void		(*set_WOW)(bool_t on_ground);
+	void		(*set_gear_ext)(bool_t gear_ext);
 } xtcas_generic_intf_t;
 
 /* X-TCAS internal */

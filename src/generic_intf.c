@@ -69,7 +69,10 @@ static xtcas_generic_intf_t generic_ops = {
     .test_is_in_prog = generic_test_is_in_prog,
     .set_output_ops = generic_set_output_ops,
     .set_has_RA = xtcas_set_has_RA,
-    .set_has_WOW = xtcas_set_has_WOW
+    .set_has_WOW = xtcas_set_has_WOW,
+    .set_RA = xtcas_set_RA,
+    .set_WOW = xtcas_set_WOW,
+    .set_gear_ext = xtcas_set_gear_ext
 };
 
 static void

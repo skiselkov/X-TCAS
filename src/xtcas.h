@@ -369,6 +369,9 @@ tcas_filter_t xtcas_get_filter(void);
 int xtcas_get_SL(void);
 void xtcas_set_has_RA(bool_t flag);
 void xtcas_set_has_WOW(bool_t flag);
+void xtcas_set_RA(double agl_hgt_m);
+void xtcas_set_WOW(bool_t on_ground);
+void xtcas_set_gear_ext(bool_t gear_ext);
 
 void xtcas_test(bool_t force_fail);
 bool_t xtcas_test_is_in_prog(void);

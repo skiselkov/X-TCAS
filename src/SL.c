@@ -132,7 +132,7 @@ static const SL_t SL_table[NUM_SL] = {
     {	/* SL1 */
 	.SL_id =	1,
 	.agl =		B_TRUE,
-	.alt_min =	0,
+	.alt_min =	-INFINITY,
 	.alt_max =	FEET2MET(50),
 	.hyst_down =	0,
 	.hyst_up =	FEET2MET(10),
@@ -284,7 +284,8 @@ xtcas_SL_select(unsigned prev_SL_id, double alt_msl, double alt_agl,
 			min = sl->alt_min;
 			max = sl->alt_max;
 		}
-		if ((sl->agl && alt_agl >= min && alt_agl < max) ||
+		if ((sl->agl && !isnan(alt_agl) && alt_agl >= min &&
+		    alt_agl < max) ||
 		    (!sl->agl && alt_msl >= min && alt_msl < max) ||
 		    (sl->gear_test == GEAR_TEST_DOWN && gear_ext) ||
 		    (sl->gear_test == GEAR_TEST_UP && !gear_ext))
