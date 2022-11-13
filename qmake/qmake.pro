@@ -31,6 +31,8 @@ QMAKE_CFLAGS += -std=c99 -g -W -Wall -Wextra -Werror -fvisibility=hidden
 QMAKE_CFLAGS += -Wunused-result -DTEST_STANDALONE_BUILD=0
 QMAKE_CFLAGS += -DXTCAS_VER=0x$$system("git rev-parse --short HEAD")
 
+QMAKE_APPLE_DEVICE_ARCHS = x86_64 arm64
+
 # _GNU_SOURCE needed on Linux for getline()
 # DEBUG - used by our ASSERT macro
 # _FILE_OFFSET_BITS=64 to get 64-bit ftell and fseek on 32-bit platforms.
