@@ -271,7 +271,7 @@ xtcas_SL_select(unsigned prev_SL_id, double alt_msl, double alt_agl,
 	/*
 	 * In case we have no altitude data, fall back to the default SL.
 	 */
-	if (!is_valid_alt(alt_msl))
+	if (!is_valid_alt_m(alt_msl))
 		return (&SL_table[FALLBACK_SL]);
 	for (int i = 0; i < NUM_SL; i++) {
 		const SL_t *sl = &SL_table[i];
