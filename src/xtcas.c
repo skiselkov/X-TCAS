@@ -2602,6 +2602,7 @@ xtcas_init(const sim_intf_input_ops_t *intf_input_ops,
 	dbg_log(tcas, 1, "init");
 
 	inited = B_TRUE;
+    worker_shutdown = B_FALSE;
 
 	ASSERT(intf_input_ops != NULL);
 	ASSERT(intf_input_ops->get_time != NULL);
