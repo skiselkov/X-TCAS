@@ -27,7 +27,7 @@ INCLUDEPATH += ../SDK
 INCLUDEPATH += $$[LIBACFUTILS]/src
 INCLUDEPATH += $$[LIBACFUTILS]/glew
 
-QMAKE_CFLAGS += -std=c99 -g -W -Wall -Wextra -Werror -fvisibility=hidden
+QMAKE_CFLAGS += -std=c11 -g -W -Wall -Wextra -Werror -fvisibility=hidden
 QMAKE_CFLAGS += -Wunused-result -DTEST_STANDALONE_BUILD=0
 QMAKE_CFLAGS += -DXTCAS_VER=0x$$system("git rev-parse --short HEAD")
 

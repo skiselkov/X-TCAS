@@ -71,10 +71,10 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -W -Wall -Wextra -Werror \
     -fvisibility=hidden \
     -DCHECK_RESULT_USED=\"__attribute__ ((warn_unused_result))\"")
 if(APPLE)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11")
 else()
 	# Because Linux header fixes are a pile of stinking garbage.
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_GNU_SOURCE")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -D_GNU_SOURCE")
 endif()
 
 #libraries
