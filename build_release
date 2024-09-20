@@ -13,30 +13,62 @@
 #
 # CDDL HEADER END
 #
-# Copyright 2018 Saso Kiselkov. All rights reserved.
+# Copyright 2024 Saso Kiselkov. All rights reserved.
+
+function my_realpath() {
+        [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+}
 
 OUTPUT="X-TCAS"
 
-VSI_STYLE=0
-GTS820_MODE=0
+VSI_MODE="OFF"
+VSI_STYLE=""
+GTS820_MODE="OFF"
 SNDSET="male1"
-NO_AUDIO=0
+AUDIO="ON"
+OS="$(uname)"
 
-while getopts "v:s:GN" opt; do
+case "$OS" in
+Darwin)
+	REALPATH=my_realpath
+	;;
+*)
+	REALPATH=realpath
+	;;
+esac
+
+while getopts "a:v:s:GNh" opt; do
 	case "$opt" in
+	a)
+		LIBACFUTILS="$(${REALPATH} "$OPTARG")"
+		;;
 	v)
+		VSI_MODE="ON"
 		VSI_STYLE="$OPTARG"
 		;;
 	s)
 		SNDSET="$OPTARG"
 		;;
 	G)
-		VSI_STYLE=0
-		GTS820_MODE=1
+		VSI_MODE="OFF"
+		VSI_STYLE=""
+		GTS820_MODE="ON"
 		SNDSET="gts820"
 		;;
 	N)
-		NO_AUDIO=1
+		AUDIO="OFF"
+		;;
+	h)
+		cat << EOF
+Usage: $0 -a <libacfutils> [-GN] [-v <style>] [-s <sndset>]
+    -a <libacfutils> : path to built libacfutils repo
+    -G : behave as a Garmin GTS 820
+    -N : disable audio generation entirely
+    -v <style> : create a VSI-styled TCAS, where <style> is either
+	"ATR" or "HONEYWELL"
+    -s <sndset> : 
+EOF
+		exit
 		;;
 	*)
 		echo "Invalid option -$OPTARG" >&2
@@ -45,30 +77,44 @@ while getopts "v:s:GN" opt; do
 	esac
 done
 
-(
-	cd qmake
-	qmake -set GTS820_MODE "$GTS820_MODE"
-	if [[ "$VSI_STYLE" = 0 ]]; then
-		qmake -set VSI_DRAW_MODE 0
-		qmake -set VSI_STYLE 1
-	else
-		qmake -set VSI_DRAW_MODE 1
-		qmake -set VSI_STYLE "$VSI_STYLE"
-	fi
-	qmake -set XTCAS_NO_AUDIO ${NO_AUDIO}
-	if [[ $(uname) = "Darwin" ]]; then
-		./build-mac || exit 1
-	else
-		./build-win-lin || exit 1
-	fi
-) || exit 1
+if [ -z "$LIBACFUTILS" ]; then
+	echo "Missing mandatory argument -a." \
+	    "Try $0 -h for more information" >&2
+	exit 1
+fi
+
+if [[ "$OS" = "Darwin" ]]; then
+	NCPUS=$(( $(sysctl -n hw.ncpu) + 1 ))
+	rm -f CMakeCache.txt
+	( cd src && rm -f CMakeCache.txt && \
+	    cmake . -DLIBACFUTILS="${LIBACFUTILS}" -DAUDIO="${AUDIO}" \
+	    -DVSI_MODE="${VSI_MODE}" -DVSI_STYLE="${VSI_STYLE}" \
+	    -DGTS820_MODE="${GTS820_MODE}" \
+	    -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" && \
+	    make -j "$NCPUS" ) || exit 1
+else
+	NCPUS=$(( $(grep 'processor[[:space:]]\+:' /proc/cpuinfo  | wc -l) + \
+	    1 ))
+	( cd src && rm -f CMakeCache.txt && \
+	    cmake . -DLIBACFUTILS="${LIBACFUTILS}" -DAUDIO="${AUDIO}" \
+	    -DVSI_MODE="${VSI_MODE}" -DVSI_STYLE="${VSI_STYLE}" \
+	    -DGTS820_MODE="${GTS820_MODE}" && \
+	    make -j "${NCPUS}" ) || exit 1
+	( cd src && rm -f CMakeCache.txt && \
+	    cmake . -DLIBACFUTILS="${LIBACFUTILS}" -DAUDIO="${AUDIO}" \
+	    -DVSI_MODE="${VSI_MODE}" -DVSI_STYLE="${VSI_STYLE}" \
+	    -DGTS820_MODE="${GTS820_MODE}" \
+	    -DCMAKE_TOOLCHAIN_FILE="XCompile.cmake" \
+	    -DHOST=x86_64-w64-mingw32 && \
+	    make -j "${NCPUS}" ) || exit 1
+fi
 
 rm -rf "$OUTPUT"
 mkdir -p "$OUTPUT/data/msgs"
 if [[ $(uname) = "Darwin" ]]; then
-	cp -r qmake/output/mac_x64 "$OUTPUT"
+	cp -r mac_x64 "$OUTPUT"
 else
-	cp -r qmake/output/{win,lin}_x64 "$OUTPUT"
+	cp -r {win,lin}_x64 "$OUTPUT"
 fi
 cp -r $SNDSET/*.wav "$OUTPUT/data/msgs"
 
