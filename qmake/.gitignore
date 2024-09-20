@@ -1,5 +1,0 @@
-object_script.win.xpl.Debug
-object_script.win.xpl.Release
-output
-win.xpl_resource.rc
-.qmake.stash

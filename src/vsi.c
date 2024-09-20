@@ -13,7 +13,7 @@
  * CDDL HEADER END
 */
 /*
- * Copyright 2017 Saso Kiselkov. All rights reserved.
+ * Copyright 2024 Saso Kiselkov. All rights reserved.
  */
 
 #include <ctype.h>
@@ -376,7 +376,7 @@ find_vs_angle(double vs)
 		vsi_range_t *r = &vsi_ranges[i];
 		double scale = (r->top_angle - r->bottom_angle) /
 		    (r->top - r->bottom);
-		double a = ((ABS(vs) - r->bottom) * scale) + r->bottom_angle;
+		double a = ((fabs(vs) - r->bottom) * scale) + r->bottom_angle;
 
 		if (vs >= vsi_ranges[i].bottom && vs <= vsi_ranges[i].top) {
 			return (a);
@@ -459,7 +459,7 @@ scale_ctc(vsi_t *vsi, vect2_t xy, bool_t clamp)
 	 * is also used for the clip arc. We want just a little more than
 	 * half the aircraft symbol sticking out from that arc.
 	 */
-	if (clamp && vect2_abs(xy) > ABS(VSI_CTC_RADIUS) * 0.99)
+	if (clamp && vect2_abs(xy) > fabs(VSI_CTC_RADIUS) * 0.99)
 		xy = vect2_set_abs(xy, VSI_CTC_RADIUS * 0.99);
 
 	return (xy);

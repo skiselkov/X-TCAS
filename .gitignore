@@ -9,6 +9,10 @@ cmake_install.cmake
 src/CMakeFiles
 src/Makefile
 src/cmake_install.cmake
+src/libX-TCAS.xpl.dll.a
 docs
 cmdfiles
 X-TCAS
+mac_x64
+lin_x64
+win_x64
