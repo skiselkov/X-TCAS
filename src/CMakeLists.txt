@@ -180,9 +180,6 @@ set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
 find_library(LIBACFUTILS_LIBRARY acfutils)
 
 if(WIN32)
-	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
-	    "../SDK/Libraries/Win/"
-	)
 	find_library(XPLM_LIBRARY XPLM_64 "${LIBACFUTILS}/SDK/Libraries/Win")
 	find_library(XPWIDGETS_LIBRARY XPWidgets_64
 	    "${LIBACFUTILS}/SDK/Libraries/Win")
@@ -195,8 +192,6 @@ if(WIN32)
 	    ${DEP_LIBS}
 	)
 elseif(APPLE)
-	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
-	    "${LIBACFUTILS}/SDK/Libraries/Mac")
 	find_library(XPLM_LIBRARY XPLM "${LIBACFUTILS}/SDK/Libraries/Mac")
 	find_library(XPWIDGETS_LIBRARY XPWidgets
 	    "${LIBACFUTILS}/SDK/Libraries/Mac")
