@@ -130,11 +130,7 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -W -Wall -Wextra -Werror \
     -fvisibility=hidden \
     -DCHECK_RESULT_USED=\"__attribute__ ((warn_unused_result))\"")
-if(APPLE)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11")
-else()
-	# Because Linux header fixes are a pile of stinking garbage.
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11")
+if(NOT APPLE)
 	add_definitions(-D_GNU_SOURCE)
 endif()
 
@@ -160,10 +156,6 @@ else()
 	add_definitions(-DIBM=0 -DAPL=0 -DLIN=1)
 endif()
 
-if(NOT APPLE)
-	link_libraries(m)
-endif()
-
 execute_process(COMMAND
     ${LIBACFUTILS}/pkg-config-deps ${PLAT_LONG} --static-openal --cflags
     OUTPUT_VARIABLE DEP_CFLAGS)
@@ -175,10 +167,7 @@ execute_process(COMMAND
     OUTPUT_VARIABLE DEP_LIBS)
 string(REGEX REPLACE "\n$" "" DEP_LIBS "${DEP_LIBS}")
 
-set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
-    "${LIBACFUTILS}/qmake/${PLAT_SHORT}")
-find_library(LIBACFUTILS_LIBRARY acfutils)
-
+find_library(LIBACFUTILS_LIBRARY acfutils "${LIBACFUTILS}/qmake/${PLAT_SHORT}")
 if(WIN32)
 	find_library(XPLM_LIBRARY XPLM_64 "${LIBACFUTILS}/SDK/Libraries/Win")
 	find_library(XPWIDGETS_LIBRARY XPWidgets_64
@@ -228,6 +217,8 @@ endif()
 set_target_properties(xtcas PROPERTIES PREFIX "")
 set_target_properties(xtcas PROPERTIES SUFFIX "")
 set_target_properties(xtcas PROPERTIES LINKER_LANGUAGE CXX)
+set_target_properties(xtcas PROPERTIES C_STANDARD 11)
+set_target_properties(xtcas PROPERTIES CXX_STANDARD 17)
 
 set_target_properties(xtcas PROPERTIES RUNTIME_OUTPUT_DIRECTORY
     "${CMAKE_SOURCE_DIR}/../${PLUGIN_BIN_OUTDIR}")
