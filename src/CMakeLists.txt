@@ -197,10 +197,19 @@ if(WIN32)
 elseif(APPLE)
 	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
 	    "${LIBACFUTILS}/SDK/Libraries/Mac")
+	find_library(XPLM_LIBRARY XPLM "${LIBACFUTILS}/SDK/Libraries/Mac")
+	find_library(XPWIDGETS_LIBRARY XPWidgets
+	    "${LIBACFUTILS}/SDK/Libraries/Mac")
+	find_library(OPENGL_FRAMEWORK OpenGL)
+	find_library(AUDIOUNIT_FRAMEWORK AudioUnit)
+	find_library(COREAUDIO_FRAMEWORK CoreAudio)
 	target_link_libraries(xtcas
 	    ${LIBACFUTILS_LIBRARY}
 	    ${XPLM_LIBRARY}
 	    ${XPWIDGETS_LIBRARY}
+	    ${OPENGL_FRAMEWORK}
+	    ${AUDIOUNIT_FRAMEWORK}
+	    ${COREAUDIO_FRAMEWORK}
 	    ${DEP_LIBS}
 	)
 else()

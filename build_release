@@ -26,6 +26,7 @@ VSI_STYLE=""
 GTS820_MODE="OFF"
 SNDSET="male1"
 AUDIO="ON"
+OS="$(uname)"
 
 case "$OS" in
 Darwin)
