@@ -16,7 +16,7 @@
 # Copyright 2024 Saso Kiselkov. All rights reserved.
 
 function my_realpath() {
-        [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+	[[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
 }
 
 OUTPUT="X-TCAS"
@@ -106,7 +106,9 @@ else
 	    -DGTS820_MODE="${GTS820_MODE}" \
 	    -DCMAKE_TOOLCHAIN_FILE="XCompile.cmake" \
 	    -DHOST=x86_64-w64-mingw32 && \
-	    make -j "${NCPUS}" ) || exit 1
+	    make -j "${NCPUS}" && \
+	    "$LIBACFUTILS/tools/mksyms" "../win_x64/X-TCAS.xpl" > \
+	    "../win_x64/syms.txt" ) || exit 1
 fi
 
 rm -rf "$OUTPUT"
