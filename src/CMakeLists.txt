@@ -117,13 +117,13 @@ else()
 		    -static-libgcc -static-libstdc++")
 	elseif(APPLE)
 		set_target_properties(xtcas PROPERTIES LINK_FLAGS
-		    "${CMAKE_SHARED_LINKER_FLAGS} -fPIC -fvisibility=hidden \
-		    -bundle")
+		    "${CMAKE_SHARED_LINKER_FLAGS} -fvisibility=hidden -bundle")
 	else()
 		set_target_properties(xtcas PROPERTIES LINK_FLAGS
 		    "${CMAKE_SHARED_LINKER_FLAGS} -rdynamic -nodefaultlibs \
 		    -undefined_warning -fPIC -fvisibility=hidden \
-		    -static-libgcc -static-libstdc++")
+		    -static-libgcc -static-libstdc++ \
+		    -Wl,--version-script=symbols.version")
 	endif()
 endif()
 
