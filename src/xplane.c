@@ -247,7 +247,7 @@ sim_intf_init(void)
 	avl_create(&acf_pos_tree, acf_pos_compar, sizeof (acf_pos_t),
 	    offsetof(acf_pos_t, tree_node));
 	mutex_init(&acf_pos_lock);
-
+	custom_bus = B_FALSE;
 	intf_inited = B_TRUE;
 }
 
