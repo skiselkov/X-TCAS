@@ -14,7 +14,7 @@
 # Copyright 2025 Saso Kiselkov. All rights reserved.
 
 cmake_minimum_required(VERSION 3.10)
-project(xtcas C)
+project(xtcas)
 
 option(VSI_MODE			"Enable VSI mode")
 option(VSI_STYLE		"VSI drawing style")
@@ -149,7 +149,7 @@ endif()
 
 add_definitions(-DXPLM200=1 -DXPLM210=1)
 if(WIN32)
-	add_definitions(-DIBM=1 -DAPL=0 -DLIN=0)
+	add_definitions(-DIBM=1 -DAPL=0 -DLIN=0 -D_WIN32_WINNT=0x0600)
 elseif(APPLE)
 	add_definitions(-DIBM=0 -DAPL=1 -DLIN=0)
 else()
