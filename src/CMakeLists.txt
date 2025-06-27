@@ -11,10 +11,10 @@
 #
 # CDDL HEADER END
 
-# Copyright 2024 Saso Kiselkov. All rights reserved.
+# Copyright 2025 Saso Kiselkov. All rights reserved.
 
-cmake_minimum_required(VERSION 3.9)
-project(xtcas)
+cmake_minimum_required(VERSION 3.10)
+project(xtcas C)
 
 option(VSI_MODE			"Enable VSI mode")
 option(VSI_STYLE		"VSI drawing style")

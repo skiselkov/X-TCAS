@@ -14,4 +14,4 @@
 # Copyright 2016 Saso Kiselkov. All rights reserved.
 
 add_subdirectory(src)
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.10)
