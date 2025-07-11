@@ -187,6 +187,7 @@ elseif(APPLE)
 	find_library(OPENGL_FRAMEWORK OpenGL)
 	find_library(AUDIOUNIT_FRAMEWORK AudioUnit)
 	find_library(COREAUDIO_FRAMEWORK CoreAudio)
+	find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
 	target_link_libraries(xtcas
 	    ${LIBACFUTILS_LIBRARY}
 	    ${XPLM_LIBRARY}
@@ -194,6 +195,7 @@ elseif(APPLE)
 	    ${OPENGL_FRAMEWORK}
 	    ${AUDIOUNIT_FRAMEWORK}
 	    ${COREAUDIO_FRAMEWORK}
+	    ${COREFOUNDATION_FRAMEWORK}
 	    ${DEP_LIBS}
 	)
 else()
