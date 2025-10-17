@@ -1231,6 +1231,13 @@ vsi_init(const char *plugindir)
 	}
 
 	fdr_find(&bus_volts, "sim/cockpit2/electrical/bus_volts");
+	
+	// Before we can do anything fancy with fonts, we must create at
+	// at least one Cairo surface, so mutexes get inited properly
+	// on Windows.
+	cairo_surface_destroy(cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, 1, 1)
+	);
 
 	if ((err = FT_Init_FreeType(&ft)) != 0) {
 		logMsg("Error initializing FreeType library: %s",
